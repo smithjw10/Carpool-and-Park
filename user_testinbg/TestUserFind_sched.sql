@@ -1,1 +1,0 @@
-select * from Schedules where UserId < 0 

@@ -1,1 +1,0 @@
-select * from Users where UserId < 0 
