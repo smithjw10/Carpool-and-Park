@@ -1,0 +1,149 @@
+﻿@page "/directions"
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Model
+@using Microsoft.AspNetCore.Authorization
+@using System.Text
+@inject IJSRuntime JSRuntime
+@inject IGMapsAPI _GmapKey // Inject your service to access the Google Maps API key
+
+@attribute [Authorize]
+<div>
+    <MudGrid class="input-group" style="margin-bottom: 20px;">
+        @*No Stops currently, so allow users to add stops*@
+        @if (!stops.Any())
+        {
+            <MudItem xs="12">
+                <MudStack Row="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Add" OnClick="CreateFirstStop"> </MudIconButton>
+                </MudStack>
+            </MudItem>
+        }
+        <MudItem xs="12" md="12">
+            <input @bind="address1" class="form-control" placeholder="Enter Start Location" />
+        </MudItem>
+        <MudItem xs="12" md="12">
+            @foreach(DirectionsStop currStops in stops)
+            {
+                @if(stops.Last().Id != currStops.Id)
+                {
+                    // Last one gets the ability to add
+                    <Stops model="currStops" OnAddStop="AddStop" OnRemoveStop="RemoveStop"></Stops>
+
+                } else
+                {
+                    <Stops model="currStops" OnAddStop="AddStop" OnRemoveStop="RemoveStop" _isLast="true"></Stops>
+                }
+            }
+        </MudItem>
+        <MudItem xs="12" md="12">
+            <input @bind="address3" class="form-control" placeholder="Enter Destination" />
+        </MudItem>
+        <MudItem xs="12" md="12">
+            <button class="btn btn-primary" @onclick="CreateRoute">Calculate Route</button>
+            <button class="btn btn-secondary" @onclick="OpenInGoogleMaps">Open in Google Maps</button>
+
+        </MudItem>
+    </MudGrid>
+
+    <div class="map-container" style="width: 100%; height: 75vh;">
+        @if (IsLocationAvailable)
+        {
+            <iframe width="100%" height="100%" frameborder="0" style="border:0"
+                    allowfullscreen
+                    src="@mapUrl">
+            </iframe>
+        }
+        else
+        {
+            <p>Please enter location information...</p>
+        }
+    </div>
+</div>
+
+@code {
+    private bool IsLocationAvailable = false;
+    private string mapUrl = "";
+    private string MapApi = "";
+    private string address1 = "", address3 = "";
+    private int StopCount = 0;
+    public List<DirectionsStop> stops = new List<DirectionsStop>();
+    protected override async Task OnInitializedAsync()
+    {
+        MapApi = _GmapKey.MapAPI; 
+
+    }
+    private async Task CreateRoute()
+    {
+        string waypoints = "";
+        if (stops.Any())
+        {
+            // Sample waypoint string 
+            //}&waypoints={Uri.EscapeDataString(address1)}|{Uri.EscapeDataString(address2)}
+            StringBuilder UserWaypoints = new StringBuilder("&waypoints=");
+            bool FirstCheck = true;
+            foreach (DirectionsStop stop in stops)
+            {
+                if (!FirstCheck)
+                {
+                    UserWaypoints.Append("|");
+
+                }
+                FirstCheck = false;
+
+                UserWaypoints.Append(Uri.EscapeDataString(stop.Address));
+
+            }
+            waypoints = UserWaypoints.ToString();
+
+        }
+        mapUrl = $"https://www.google.com/maps/embed/v1/directions?key={MapApi}&origin={Uri.EscapeDataString(address1)}&destination={Uri.EscapeDataString(address3)}{waypoints}&mode=driving";
+        Console.WriteLine(mapUrl);
+
+        IsLocationAvailable = true;
+    }
+
+    [JSInvokable]
+    public void HandleError(string error)
+    {
+        Console.WriteLine($"Error getting location: {error}");
+        // Handle error here, possibly displaying a message to the user
+    }
+    public void AddStop(int id)
+    {
+        StopCount++;
+        stops.Add(new DirectionsStop(StopCount, ""));
+        StateHasChanged();
+    }
+    public void RemoveStop(DirectionsStop id)
+    {
+
+        stops.Remove(id);
+        StateHasChanged();
+
+    }
+    public void CreateFirstStop()
+    {
+        stops.Add(new DirectionsStop(StopCount, ""));
+    }
+    private async Task OpenInGoogleMaps()
+    {
+        string waypoints = "";
+        if (stops.Any())
+        {
+            StringBuilder UserWaypoints = new StringBuilder("&waypoints=");
+            bool FirstCheck = true;
+            foreach (DirectionsStop stop in stops)
+            {
+                if (!FirstCheck)
+                {
+                    UserWaypoints.Append("|");
+                }
+                FirstCheck = false;
+                UserWaypoints.Append(Uri.EscapeDataString(stop.Address));
+            }
+            waypoints = UserWaypoints.ToString();
+        }
+        string googleMapsUrl = $"https://www.google.com/maps/dir/?api=1&origin={Uri.EscapeDataString(address1)}&destination={Uri.EscapeDataString(address3)}{waypoints}&travelmode=driving";
+        await JSRuntime.InvokeVoidAsync("open", googleMapsUrl, "_blank");
+    }
+}

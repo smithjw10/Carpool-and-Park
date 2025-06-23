@@ -1,0 +1,71 @@
+﻿@page "/Admin/CarpoolGroups Management"
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@layout AdminLayout
+@using System.Net.Http.Json
+@inject HttpClient httpClient
+@inject ICarpoolGroupsData _dbCarpoolGroups
+@inject IDialogService DialogService
+
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <MudDataGrid T="CarpoolGroupsModel" Items="CarpoolGroupsList" Bordered="true" Dense="true" ReadOnly="false" EditMode="MudBlazor.DataGridEditMode.Form"
+                 StartedEditingItem="@StartedEditingGroup" CanceledEditingItem="@CanceledEditingGroup" CommittedItemChanges="@CommittedGroupChanges" EditTrigger="DataGridEditTrigger.Manual">
+        <Columns>
+            <PropertyColumn Property="x => x.GroupId" Title="Group ID" IsEditable="false" />
+            <PropertyColumn Property="x => x.GroupName" Title="Name" />
+            <PropertyColumn Property="x => x.DriverId" Title="Loc" IsEditable="false" />
+            <PropertyColumn Property="x => x.Destination" Title="Destination" IsEditable="false" />
+             <TemplateColumn Title="Actions">
+                 <CellTemplate>
+                    <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteGroup(context.Item))" />
+                     <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="@context.Actions.StartEditingItemAsync" />
+                 </CellTemplate>
+             </TemplateColumn>
+         </Columns>
+     </MudDataGrid>
+ </RadzenCard>
+
+
+ @code {
+    private List<CarpoolGroupsModel> CarpoolGroupsList = new();
+    private string _searchString;
+    protected override async Task OnInitializedAsync()
+    {
+        CarpoolGroupsList = await _dbCarpoolGroups.GetAllCarpoolGroups();
+    }
+
+    void StartedEditingGroup(CarpoolGroupsModel group)
+    {
+    }
+
+    void CanceledEditingGroup(CarpoolGroupsModel group)
+    {
+    }
+
+    async Task CommittedGroupChanges(CarpoolGroupsModel group)
+    {
+        await _dbCarpoolGroups.UpdateCarpoolGroup(group);
+        CarpoolGroupsList = await _dbCarpoolGroups.GetAllCarpoolGroups();
+    }
+    async Task DeleteGroup(CarpoolGroupsModel group)
+    {
+        var parameters = new MudBlazor.DialogParameters();
+        parameters.Add("ContentText", $"Are you sure you want to delete {group.GroupName} ?");
+        parameters.Add("ButtonText", "Delete");
+        parameters.Add("Color", Color.Error);
+        var dialog = DialogService.Show<ConfirmationDialog>("Delete Group", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            await _dbCarpoolGroups.DeleteCarpoolGroup(group);
+            CarpoolGroupsList.Remove(group);
+            StateHasChanged(); 
+        }
+    }
+}

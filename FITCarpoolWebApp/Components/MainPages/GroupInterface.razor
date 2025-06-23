@@ -1,0 +1,103 @@
+﻿@page "/Group-Interface"
+@using MudBlazor
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@inject IUsersData _dbUsers
+@attribute [Authorize]
+
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%;">
+        <RadzenHeading Size="H2" Text="Group Recommendations" Style="text-align: center; margin-bottom: 20px;" />
+
+        @foreach (var group in GroupRecommendations.Keys)
+        {
+            if (GroupRecommendations[group])
+            {
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; margin-top: 20px;">
+                    <RadzenHeading Size="H2" Text=@($"Group Recommendation {group + 1}") />
+                    <div>
+                        <RadzenButton Text="Join Group" Style="margin-right: 10px;" Shade="Shade.Light" ButtonStyle="ButtonStyle.Success" />
+                        <RadzenButton Text="Deny Recommendation" Shade="Shade.Light" ButtonStyle="ButtonStyle.Danger" Click="() => DenyGroup(group)" />
+                    </div>
+                </div>
+                <RadzenDataGrid Data="@RecommendationData[group]" TItem="UsersModel" AllowSorting="true">
+                    <Columns>
+
+                        <RadzenDataGridColumn TItem="UsersModel" Width="80px">
+                            <Template Context="user">
+                                @if (user.ProfilePicture != null)
+                                {
+                                    <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(user.ProfilePicture)}")" alt="Profile Picture" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                                }
+                                else
+                                {
+                                    <img src="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" alt="Default Profile" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="UsersModel" Property="Email" Title="Email" Width="200px" />
+                        <RadzenDataGridColumn TItem="UsersModel" Title="Name" Width="200px">
+                            <Template Context="user">
+                                @{
+                                    var fullName = $"{user.FirstName} {user.LastName}";
+                                }
+                                <text>@fullName</text>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="UsersModel" Title="Role" Width="100px">
+                            <Template Context="user">
+                                @{
+                                    var role = $"{user.UserType}";
+                                }
+                                <text>@role</text>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="UsersModel" Context="user" Width="140px">
+                            <Template>
+                                <RadzenButton Text="View User" Click="@(() => ViewUser(user.Email))" Style="width: 100%; background-color: #D3D3D3; color: #333;" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        }
+    </RadzenCard>
+</RadzenStack>
+
+
+@code {
+    private Dictionary<int, bool> GroupRecommendations = new();
+    private Dictionary<int, List<UsersModel>> RecommendationData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var allUsers = await _dbUsers.GetAllUser();
+        RecommendationData.Add(0, allUsers.Take(3).ToList());
+        RecommendationData.Add(1, allUsers.Skip(3).Take(3).ToList());
+
+        foreach (var key in RecommendationData.Keys)
+        {
+            GroupRecommendations[key] = true;
+        }
+    }
+
+    private void DenyGroup(int groupIndex)
+    {
+        if (GroupRecommendations.ContainsKey(groupIndex))
+        {
+            GroupRecommendations[groupIndex] = false;
+            StateHasChanged(); // Ensure UI refresh
+        }
+    }
+
+    private void ViewUser(string userEmail)
+    {
+        NavigationManager.NavigateTo($"/Other-User-Details/{userEmail}");
+    }
+}

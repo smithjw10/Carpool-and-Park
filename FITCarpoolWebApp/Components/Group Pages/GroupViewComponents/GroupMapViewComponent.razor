@@ -1,0 +1,103 @@
+﻿@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Model.Logic_Models
+@inject IJSRuntime JSRuntime
+@inject IGMapsAPI _GmapKey
+
+@code {
+    [Parameter] public RecomendedGroup GroupRecommendation { get; set; }
+    public List<UserInfoModel> GroupMembers { get; set; }
+    private string MapApiKey;
+    private string MapId = "groupMap";
+    private bool isMapInitialized = false;
+    private List<Coordinate> coordinates;
+
+    public class Coordinate
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize Google Maps API Key
+        MapApiKey = _GmapKey.MapAPI;
+
+        // Assign GroupMembers from GroupRecommendation
+        GroupMembers = GroupRecommendation.GroupMembers;
+
+        // Create list of coordinates
+        coordinates = GroupMembers.Select(user => new Coordinate
+            {
+                Latitude = user.PickupLatitude,
+                Longitude = user.PickupLongitude
+            }).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isMapInitialized)
+        {
+            await InitializeMap(coordinates);
+            isMapInitialized = true;
+        }
+    }
+
+    private async Task InitializeMap(List<Coordinate> coordinates)
+    {
+        // Call JavaScript to initialize map with given coordinates and API key
+        await JSRuntime.InvokeVoidAsync("initializeMap", coordinates, MapApiKey);
+    }
+}
+
+<div id="map" style="height:500px;width:100%;"></div>
+
+<style>
+    /* Make the map container responsive */
+    #map {
+        height: 100%;
+        width: 100%;
+        max-width: 100%;
+        aspect-ratio: 16 / 9;
+    }
+</style>
+
+<script>
+    function initializeMap(coordinates, apiKey) {
+        var script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+        script.async = true;
+        document.head.appendChild(script);
+
+        window.initMap = function () {
+            if (typeof coordinates === 'string') {
+                coordinates = JSON.parse(coordinates);
+            }
+
+            var avgLat = 0;
+            var avgLng = 0;
+            for (var i = 0; i < coordinates.length; i++) {
+                avgLat += coordinates[i].latitude;
+                avgLng += coordinates[i].longitude;
+            }
+            avgLat /= coordinates.length;
+            avgLng /= coordinates.length;
+
+            var centerLatLng = new google.maps.LatLng(avgLat, avgLng);
+            var options = {
+                zoom: 14,
+                center: centerLatLng,
+                mapTypeId: google.maps.MapTypeId.ROADMAP
+            };
+            var map = new google.maps.Map(document.getElementById("map"), options);
+
+            for (var i = 0; i < coordinates.length; i++) {
+                var latlng = new google.maps.LatLng(coordinates[i].latitude, coordinates[i].longitude);
+                var marker = new google.maps.Marker({
+                    position: latlng,
+                    map: map,
+                    title: "User " + (i + 1)
+                });
+            }
+        }
+    }
+</script>

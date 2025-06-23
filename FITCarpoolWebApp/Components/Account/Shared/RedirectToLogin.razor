@@ -1,0 +1,9 @@
+﻿@inject NavigationManager NavigationManager
+
+@code {
+    // This component is called by the Routes.razor to send unauthenticated users to the login page
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo($"Account/Login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}", forceLoad: true);
+    }
+}

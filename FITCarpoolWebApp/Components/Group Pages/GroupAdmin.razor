@@ -1,0 +1,236 @@
+﻿@page "/GroupAdmin"
+@using DataAccessLibrary.Data
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model.Logic_Models
+@using FITCarpoolWebApp.Components.Group_Pages.GroupViewComponents
+@using MudBlazor
+@inject ISchedulesData _dbSchedules
+@inject IUsersData _dbUsers
+@inject IGroupRecommendationData _dbGroupRec
+
+@inject Radzen.DialogService DialogService;
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudSelect Value="selectedYear" Label="Select Year" T="int" ValueChanged="OnYearChanged" Class="mb-4">
+        @foreach (var year in years)
+        {
+            <MudSelectItem Value="year">@year</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudSelect Value="selectedWeek" Label="Select Week" T="Week" ValueChanged="OnWeekChanged" Class="mb-4">
+        @foreach (var week in weeks)
+        {
+            <MudSelectItem Value="week">@week.DisplayString</MudSelectItem>
+        }
+    </MudSelect>
+    <MudButton Color="Color.Success" FullWidth="true" OnClick="GenerateGroups">Generate Groups for Selected Week</MudButton>
+    <!-- Header that toggles the collapse -->
+    <MudPaper Class="pa-2 mb-2" Style="cursor: pointer;" @onclick="ToggleUserList">
+        <MudText Typo="Typo.h6" Class="mb-0">User List</MudText>
+    </MudPaper>
+
+    <!-- Collapsible content -->
+    <MudCollapse Expanded="@isUserListExpanded">
+        <MudDataGrid T="UserScheduleEntry" Items="UserList" Bordered="true" Dense="true" ReadOnly="true" Virtualize="true" RowsPerPage="10">
+            <Columns>
+                <PropertyColumn Property="x => x.UserID" Title="User ID" />
+                <PropertyColumn Property="x => x.Start" Title="Start" />
+                <PropertyColumn Property="x => x.End" Title="End" />
+                <PropertyColumn Property="x => x.Direction" Title="Direction" />
+            </Columns>
+            <PagerContent>
+                <MudDataGridPager T="UserScheduleEntry" />
+            </PagerContent>
+        </MudDataGrid>
+    </MudCollapse>
+    <!-- Header that toggles the collapse for Group Data grid -->
+
+    <MudPaper Class="pa-2 mb-2" Style="cursor: pointer;" @onclick="ToggleGroupList">
+        <MudText Typo="Typo.h6" Class="mb-0">Group List</MudText>
+    </MudPaper>
+
+    <!-- Collapsible content group data grid s-->
+    <MudCollapse Expanded="@isGroupListExpanded">
+        <MudDataGrid T="RecomendedGroup" Items="GroupList" Bordered="true" Dense="true" ReadOnly="true" Loading="loading" 
+            Virtualize="true" RowsPerPage="50" >
+            <ToolBarContent>
+                @if (loading)
+                {
+                    <MudProgressCircular Color="Color.Info" Indeterminate="true" />
+                }
+                else
+                {
+                    @if (ShowInsertBtn){
+                        <MudIconButton OnClick = "LoadRecomendationsToDatabase" Color = "Color.Success" Icon = "@Icons.Material.Filled.CloudUpload" />
+                    }
+                    @if (ShowDeleteBtn)
+                    {
+                        <MudIconButton OnClick="DeleteFromDB" Color="Color.Error" Icon="@Icons.Material.Filled.Delete" />
+                    }
+                    <MudSpacer></MudSpacer>
+                    <MudText>@GroupDataStatus</MudText>
+                }
+            </ToolBarContent>
+            <Columns>
+                <PropertyColumn Property="x => x.GroupName" Title="Group Name" />
+                <PropertyColumn Property="x => x.Direction" Title="Direction" />
+                <PropertyColumn Property="x => x.RecurringPattern" Title="Recurring Pattern" />
+                <PropertyColumn Property="x => x.IsRecurring" Title="Recurring?" />
+
+                <TemplateColumn Title="Active Time Slots">
+                    <CellTemplate>
+                        @if (context.Item.ActiveTimeSlots != null && context.Item.ActiveTimeSlots.Any())
+                        {
+                            <MudChipSet>
+                                @foreach (var timeSlot in context.Item.ActiveTimeSlots)
+                                {
+                                    <MudChip>@timeSlot.ToString("g")</MudChip>
+                                }
+                            </MudChipSet>
+                        }
+                        else
+                        {
+                            <span>No time slots</span>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn>
+                    <CellTemplate>
+                        <MudIconButton OnClick="@(async () => await ShowGroupDetails(context.Item))" Color="Color.Error" Icon="@Icons.Material.Filled.Search" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <PagerContent>
+                <MudDataGridPager T="RecomendedGroup" />
+            </PagerContent>
+        </MudDataGrid>
+    </MudCollapse>
+</MudContainer>
+
+@code {
+    private List<int> years = new();
+    private int selectedYear;
+    private List<Week> weeks = new();
+    private Week selectedWeek;
+    public List<UserScheduleEntry> UserList = new();
+    public List<RecomendedGroup> GroupList = new();
+    public List<TimeWindow> timeSlots = new();
+    private bool isUserListExpanded = false; // Controls the collapse state
+    private bool isGroupListExpanded = true; // Controls the collapse state
+    private bool ShowDeleteBtn = false;
+    private bool ShowInsertBtn = false;
+    private bool loading = false;
+    public string GroupDataStatus = "";
+    protected override async Task OnInitializedAsync()
+    {
+        int currentYear = DateTime.Now.Year;
+        years = new List<int> { currentYear, currentYear + 1 };
+        selectedYear = currentYear;
+        GenerateWeeks(selectedYear);
+        await OnWeekChanged(weeks.FirstOrDefault(e => e.StartDate.Date == new DateTime(2024, 11, 25)) ?? weeks.First());
+    }
+    public async Task LoadRecomendationsToDatabase()
+    {
+        loading = true;
+
+        await _dbGroupRec.InsertRecommendedGroups(GroupList);
+        ShowDeleteBtn = true;
+        ShowInsertBtn = false;
+        loading = false;
+    }
+    public async Task DeleteFromDB()
+    {
+        loading = true;
+        await _dbGroupRec.DeleteRecommendedGroups(GroupList);
+        GroupList = new();
+        loading = false;
+    }
+    private void OnYearChanged(int newYear)
+    {
+        selectedYear = newYear;
+        GenerateWeeks(selectedYear);
+        selectedWeek = null; // Reset selected week
+    }
+    private async Task OnWeekChanged(Week newWeek)
+    {
+        selectedWeek = newWeek;
+    }
+    private void GenerateWeeks(int year)
+    {
+        weeks.Clear();
+
+        DateTime firstDayOfYear = new DateTime(year, 1, 1);
+        DateTime lastDayOfYear = new DateTime(year, 12, 31);
+
+        // Find the Monday of the week that contains January 1st
+        int daysSinceMonday = ((int)firstDayOfYear.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        DateTime firstMonday = firstDayOfYear.AddDays(-daysSinceMonday);
+
+        DateTime date = firstMonday;
+
+        // Continue adding weeks while the week overlaps with the selected year
+        while (date <= lastDayOfYear.AddDays(6)) // Add 6 to include weeks that end in the next year
+        {
+            DateTime startDate = date;
+            DateTime endDate = date.AddDays(4); // Friday
+
+            // Check if the week overlaps with the selected year
+            if (endDate >= firstDayOfYear && startDate <= lastDayOfYear)
+            {
+                Week week = new()
+                    {
+                        StartDate = startDate,
+                        EndDate = endDate,
+                        DisplayString = $"{startDate:MM/dd/yyyy} - {endDate:MM/dd/yyyy}"
+                    };
+
+                weeks.Add(week);
+            }
+
+            date = date.AddDays(7); // Move to next week
+        }
+    }
+    private void ToggleUserList()
+    {
+        isUserListExpanded = !isUserListExpanded;
+    }
+    private void ToggleGroupList()
+    {
+        isGroupListExpanded = !isGroupListExpanded;
+    }
+    private async Task ShowGroupDetails(RecomendedGroup group)
+    {
+        var parameters = new Dictionary<string, object> { { "CurrentGroup", group } };
+        var options = new Radzen.DialogOptions
+            {
+                Width = "100%",
+                CloseDialogOnOverlayClick = true
+            };
+
+        await DialogService.OpenAsync<ViewGroupDialog>("View Group", parameters, options);
+    }
+    public async Task GenerateGroups()
+    {
+        ShowDeleteBtn = false;
+        ShowInsertBtn = false;
+        // Reset group list 
+        GroupList = await _dbGroupRec.GetRecommendedGroupsForTimePeriod(selectedWeek);
+        if(GroupList == null || !GroupList.Any())
+        {
+            GroupDataStatus = "Groups created and ready to send database";
+            // Get users from Database that has schedules during the week
+            UserList = await _dbSchedules.GetScheduleEntries(selectedWeek.StartDate, selectedWeek.EndDate);
+            // For each time slot get the users that are in it
+            GroupRecomendationLogic createGroupLogic = new GroupRecomendationLogic(UserList, selectedWeek, _dbUsers);
+            GroupList = await createGroupLogic.GetRecomendedGroupsAsync();
+            ShowInsertBtn = true;
+
+        } else
+        {
+            GroupDataStatus = "Data Loaded from Database";
+            ShowDeleteBtn = true;
+        }
+
+    }
+}

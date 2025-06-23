@@ -1,0 +1,69 @@
+﻿@using DataAccessLibrary.Model.Logic_Models
+
+<h3>Preference Matrix</h3>
+
+@if (GroupRecommendation?.GroupMembers != null && GroupRecommendation.GroupMembers.Any())
+{
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>User</th>
+                @foreach (var member in GroupRecommendation.GroupMembers)
+                {
+                    <th>@member.FirstName @member.LastName</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rowMember in GroupRecommendation.GroupMembers)
+            {
+                <tr>
+                    <td>@rowMember.FirstName @rowMember.LastName</td>
+                    @foreach (var columnMember in GroupRecommendation.GroupMembers)
+                    {
+                        <td>
+                            @if (rowMember.UserID == columnMember.UserID)
+                            {
+                                <span>-</span> <!-- Self-match -->
+                            }
+                            else
+                            {
+                                var matchScore = CalculatePreferenceMatch(rowMember, columnMember);
+                                <span>@matchScore%</span>
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No group members available to display the matrix.</p>
+}
+
+@code {
+    [Parameter] public RecomendedGroup GroupRecommendation { get; set; }
+
+    private double CalculatePreferenceMatch(UserInfoModel user1, UserInfoModel user2)
+    {
+        if (user1 == null || user2 == null) return 0;
+
+        int matchScore = 0;
+        int totalPreferences = 5;
+
+        if (user1.GenderPreference == user2.Gender || user1.GenderPreference == "No Preference")
+            matchScore++;
+        if (user1.SmokingPreference == user2.AllowSmokeVape || user1.SmokingPreference == "No Preference")
+            matchScore++;
+        if (user1.EatingPreference == user2.AllowEatDrink || user1.EatingPreference == "No Preference")
+            matchScore++;
+        if (user1.TemperaturePreference == user2.TemperaturePreference || user1.TemperaturePreference == "No Preference")
+            matchScore++;
+        if (user1.MusicPreference == user2.MusicPreference || user1.MusicPreference == "No Preference")
+            matchScore++;
+
+        return (double)matchScore / totalPreferences * 100;
+    }
+}

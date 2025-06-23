@@ -1,0 +1,238 @@
+﻿@inject NavigationManager NavigationManager
+@inject IUsersData _dbUsers
+@inject IReviewsData _dbReviews
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject Radzen.DialogService DialogService
+@inject HttpClient httpClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+
+@using Radzen.Blazor
+@page "/User-Details"
+
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+
+
+    <RadzenRow RowGap="0">
+
+
+
+
+
+        @if (InputModel.ProfilePicture == null)
+        {
+
+            <RadzenImage Path="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" Click="@(() => NavigateTo("Profile"))" Style="width: 150px; height: 150px; border-radius: 50%;" />
+
+        }
+
+        @if (InputModel.ProfilePicture != null)
+        {
+            <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(InputModel.ProfilePicture)}")" Click="@(() => NavigateTo("Profile"))" AlternateText="binary image" Style="width: 150px; height: 150px; border-radius: 50%;" />
+        }
+
+
+
+        <RadzenStack Orientation="Radzen.Orientation.Vertical" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+
+
+            <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+                <RadzenText TextStyle="TextStyle.H4" Placeholder="User's Name'..." class="rz-display-flex  rz-my-0">
+                    @userFullName
+                </RadzenText>
+                <RadzenButton Click=@(args => NavigateTo("Profile")) Text="Edit profile" ButtonStyle="ButtonStyle.Primary" />
+            </RadzenStack>
+
+            <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+
+                <RadzenText TextStyle="TextStyle.Button" Click="@(() => NavigateTo("Friends"))" Style=" font-size: 26px;" class="rz-display-flex">13 </RadzenText>
+                <RadzenText TextStyle="TextStyle.Button" class="rz-display-flex ">Friends</RadzenText>
+
+
+                <RadzenText TextStyle="TextStyle.Button" Style="font-size: 26px;" class="rz-display-flex ">24</RadzenText>
+
+                <RadzenText TextStyle="TextStyle.Button" Click="@(() => NavigateTo("Group"))" class="rz-display-flex">Completed Rides</RadzenText>
+            </RadzenStack>
+
+        </RadzenStack>
+
+
+    </RadzenRow>
+
+
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Address</RadzenText>
+
+    <RadzenText TextStyle="TextStyle.Subtitle1" Placeholder="User's Name'..." class="rz-display-flex  rz-my-0">
+        @userAddress
+    </RadzenText>
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Phone Number</RadzenText>
+    <RadzenText TextStyle="TextStyle.Subtitle1" Placeholder="User's Phone Number'..." class="rz-display-flex  rz-my-0">
+        @userPhone
+    </RadzenText>
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Email</RadzenText>
+    <RadzenText TextStyle="TextStyle.Subtitle1" Placeholder="User's Email'..." class="rz-display-flex  rz-my-0">
+        @userEmail
+    </RadzenText>
+
+
+
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Pronouns</RadzenText>
+    <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">She/Her, He/Him, etc.</RadzenText>
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Bio</RadzenText>
+    <RadzenTextArea class="w-60" aria-label="TextArea" />
+
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-2">Current Rating </RadzenText>
+    <RadzenRating Value="@(Convert.ToInt32(Math.Round(ratingValue)))" Max="5" ReadOnly="true" Style="margin-right: 10px;" />
+    <MudText Typo="Typo.body1">Rating Value: @ratingValue.ToString("0.00")</MudText>
+
+    <RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-2">Reviews</RadzenText>
+
+    @if (userReviews != null && userReviews.Any())
+    {
+        @foreach (var reviewText in userReviews)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">@reviewText</RadzenText>
+        }
+    }
+    else
+    {
+        <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">No reviews yet.</RadzenText>
+    }
+
+
+    <RadzenStack>
+        <MudText Typo="Typo.h6" Align="Align.Center">Rider/Driver Statistics</MudText>
+    </RadzenStack>
+    <MudDataGrid Items="stats" Bordered="true" T="Statistics">
+        <Columns>
+            <PropertyColumn Property="x => x.title" Title="Description" />
+            <PropertyColumn Property="x => x.miles" Title="Miles" />
+        </Columns>
+    </MudDataGrid>
+
+
+</RadzenCard>
+
+
+
+
+
+@code {
+
+    bool show;
+
+    public int view { get; private set; }
+
+
+
+    private void NavigateTo(string page)
+    {
+        NavigationManager.NavigateTo($"/{page}");
+    }
+
+
+    private List<Statistics> stats;
+
+    protected override void OnInitialized()
+    {
+        stats = new List<Statistics>
+        {
+            new Statistics { title = "Total Driving Miles", miles = 3},
+            new Statistics { title = "Total Riding Miles", miles = 8},
+            new Statistics { title = "Net Driving Miles", miles = 15},
+            new Statistics { title = "Net Driving Miles Per Week", miles = 6}
+
+        };
+    }
+
+    public class Statistics
+    {
+        public string? title { get; set; }
+        public int miles { get; set; }
+        public int CurrentSize { get; set; }
+        public string? Description { get; set; }
+    }
+
+
+    // Code for displaying other users' profile
+
+    private UsersModel selectedUser;
+    private string userFullName => InputModel?.FirstName + " " + InputModel?.LastName ?? "No user selected";
+    //private List<UsersModel> UserList = new();
+    UsersModel InputModel = new();
+    private List<UsersModel> UserList = null;
+    private string userName = "Not found";
+    private List<string> userReviews;
+
+    private string userEmail => InputModel?.Email ?? "Email not avaliable";
+    private string userAddress => InputModel?.PickupLocation ?? "Address not available";
+    private string userPhone => InputModel?.Phone ?? "Phone Number not available";
+
+
+    private double noValue;
+    public double ratingValue
+    {
+        get => InputModel?.Rating ?? noValue;
+        set
+        {
+            if (InputModel != null)
+            {
+                InputModel.Rating = value;
+            }
+            noValue = value;
+        }
+    }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        //UserList = await _dbUsers.GetAllUser();
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            userName = "Not found";
+        }
+        UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            InputModel = UserList.First();
+        }
+
+        if (InputModel != null)
+        {
+            userReviews = await _dbReviews.GetReviewsText(InputModel.UserId);
+        }
+    }
+
+    private async Task<IEnumerable<UsersModel>> SearchUser(string value)
+    {
+        await Task.Delay(5);
+
+        if (string.IsNullOrEmpty(value))
+            return Enumerable.Empty<UsersModel>();
+
+        return UserList.Where(user =>
+            $"{user.Email}".Contains(value, StringComparison.InvariantCultureIgnoreCase))
+            .ToList();
+    }
+
+    
+}

@@ -1,0 +1,43 @@
+﻿@page "/Find-Groups"
+@using DataAccessLibrary.Model.Logic_Models
+@using MudBlazor
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@inject IUsersData _dbUsers
+@inject ISchedulesData _dbSchedules
+@inject IGMapsAPI _GmapKey
+@attribute [Authorize]
+
+
+@code {
+    List<List<UserInfoModel>> RecomendedGroups = new();
+    private UsersModel CurrentUser = new();
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var UserName = "";
+        if (user.Identity.IsAuthenticated)
+        {
+            UserName = user.Identity.Name;
+        }
+        else
+        {
+            UserName = "Not found";
+        }
+        var UserList = await _dbUsers.GetUser(UserName);
+        if (UserList.Any())
+        {
+            CurrentUser = UserList.First();
+
+        }
+    }
+}

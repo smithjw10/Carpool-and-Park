@@ -1,0 +1,181 @@
+﻿@page "/Rider-Confirmation"
+
+@using FITCarpoolWebApp.Components.Account.Shared
+@using MudBlazor
+@using Radzen.Blazor
+@inject NotificationService NotificationService
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Model.Database_Models
+@using Microsoft.EntityFrameworkCore
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IUsersData _dbUsers
+@inject IFriendsData _dbFriends
+@inject IGroupScheduleData _dbGroupSchedule
+@inject NavigationManager NavigationManager
+@inject IUsersData _dbUsers
+@inject IGroupMembersData _dbGroupMembers
+@inject IGroupScheduleData _dbGroupSchedule
+@inject ICarpoolGroupsData _dbCarpoolGroups
+@inject Radzen.DialogService DialogService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <MudText Typo="Typo.h2" Align="Align.Center">Upcoming Trip</MudText>
+    <MudText Typo="Typo.h3" Align="Align.Center">Date: @upcomingTrip?.Start.ToString("dddd, MMM. d, hh:mm tt")</MudText>
+    <MudText Typo="Typo.h4" Align="Align.Center">Group Name: @carpoolGroup?.GroupName</MudText>
+
+    <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+        <RadzenButton Text="Accept Ride" ButtonStyle="ButtonStyle.Success" Click="@AcceptRide" />
+        <RadzenButton Text="Cancel Ride" ButtonStyle="ButtonStyle.Danger" Click="@CancelRide" />
+    </RadzenStack>
+
+    <!-- Driver Information -->
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:65%">
+        <MudText Typo="Typo.h4" Align="Align.Center">Driver's Information</MudText>
+        <RadzenStack Orientation="Radzen.Orientation.Horizontal" JustifyContent="Radzen.JustifyContent.Start" AlignItems="Radzen.AlignItems.Center" Gap="1rem" class="rz-p-4">
+            @if (driver != null)
+            {
+                @if (driver.ProfilePicture != null)
+                {
+                    <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(driver.ProfilePicture)}")" Style="width: 100px; height: 100px; border-radius: 50%;" />
+                }
+                else
+                {
+                    <RadzenImage Path="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" Style="width: 100px; height: 100px; border-radius: 50%;" />
+                }
+                <RadzenStack Gap="0">
+                    <RadzenText TextStyle="TextStyle.H5">Driver: @driver.FirstName @driver.LastName</RadzenText>
+                    <RadzenText TextStyle="TextStyle.H5">Contact: @driver.Phone</RadzenText>
+                </RadzenStack>
+            }
+        </RadzenStack>
+
+        <!-- Car Information -->
+        <RadzenStack Orientation="Radzen.Orientation.Horizontal" JustifyContent="Radzen.JustifyContent.Start" AlignItems="Radzen.AlignItems.Center" Gap="1rem" class="rz-p-4">
+            @if (driver?.CarPicture != null)
+            {
+                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(driver.CarPicture)}")" Style="width: 100px; height: 100px; border-radius: 50%;" />
+            }
+            else
+            {
+                <RadzenImage Path="https://carden.com.py/miniatura/default.jpg" Style="width: 100px; height: 100px; border-radius: 50%;" />
+            }
+            <RadzenStack Gap="0">
+                <RadzenText TextStyle="TextStyle.H5">Make and Model: @driver.MakeModel</RadzenText>
+                <RadzenText TextStyle="TextStyle.H5">License Plate: @driver.LicensePlate</RadzenText>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenCard>
+
+    <!-- Passenger Information -->
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:65%">
+        <MudText Typo="Typo.h4" Align="Align.Center">Passengers</MudText>
+        @if (passengers != null && passengers.Any())
+        {
+            @foreach (var passenger in passengers)
+            {
+                <RadzenStack Orientation="Radzen.Orientation.Horizontal" JustifyContent="Radzen.JustifyContent.Start" AlignItems="Radzen.AlignItems.Center" Gap="1rem" class="rz-p-4">
+                    @if (passenger.ProfilePicture != null)
+                    {
+                        <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(passenger.ProfilePicture)}")" Style="width: 100px; height: 100px; border-radius: 50%;" />
+                    }
+                    else
+                    {
+                        <RadzenImage Path="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" Style="width: 100px; height: 100px; border-radius: 50%;" />
+                    }
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H5">@passenger.FirstName @passenger.LastName</RadzenText>
+                    </RadzenStack>
+                    <RadzenButton Text="View User" Click="@(() => ViewUser(passenger.Email))" Style="margin-left:auto" />
+                </RadzenStack>
+            }
+        }
+    </RadzenCard>
+</RadzenCard>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public int groupId { get; set; }
+
+    private GroupScheduleModel upcomingTrip;
+    private CarpoolGroupsModel carpoolGroup;
+    private UsersModel driver;
+    private List<UsersModel> passengers = new();
+    private int userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            // Fetch the user details
+            var userList = await _dbUsers.GetUser(user.Identity.Name);
+            if (userList.Any())
+            {
+                userId = userList.First().UserId;
+            }
+        }
+
+        var schedules = await _dbGroupSchedule.GetScheduleForGroup(groupId);
+        if (schedules?.Any() == true)
+        {
+            upcomingTrip = schedules.First();
+        }
+
+        var groups = await _dbCarpoolGroups.GetCarpoolGroup(groupId);
+        if (groups?.Any() == true)
+        {
+            carpoolGroup = groups.First();
+        }
+
+        if (carpoolGroup != null)
+        {
+            var driverList = await _dbUsers.GetUser(carpoolGroup.DriverId);
+            driver = driverList.FirstOrDefault();
+        }
+
+        if (carpoolGroup != null)
+        {
+            var allMembers = await _dbGroupMembers.GetAllGroupMembers();
+            var groupMembers = allMembers.Where(m => m.GroupId == groupId).ToList();
+
+            foreach (var member in groupMembers)
+            {
+                if (member.UserId != carpoolGroup.DriverId) // Exclude driver from passengers
+                {
+                    var passenger = await _dbUsers.GetUser(member.UserId);
+                    if (passenger.Any()) passengers.Add(passenger.First());
+                }
+            }
+        }
+    }
+
+    private void AcceptRide()
+    {
+        if (carpoolGroup != null && carpoolGroup.DriverId == userId)
+        {
+            NavigationManager.NavigateTo("/driver");
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/rider");
+        }
+    }
+
+    private void ViewUser(string userEmail)
+    {
+        NavigationManager.NavigateTo($"/Other-User-Details/{userEmail}");
+    }
+
+    private void CancelRide()
+    {
+        NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = "Ride Cancelled" });
+    }
+}

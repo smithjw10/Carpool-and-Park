@@ -1,0 +1,23 @@
+﻿@page "/Admin"
+@layout AdminLayout
+
+@using MudBlazor
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <RadzenStack>
+        <MudText Typo="Typo.h2" Align="Align.Center">Database Management Pages</MudText>
+        <RadzenButton Text="Update Profile" Click="@(() => NavigateTo("Users Management"))" />
+        <RadzenButton Text="Update Roles" Click="@(() => NavigateTo("Roles Management"))" />
+        <RadzenButton Text="Update Groups" Click="@(() => NavigateTo("CarpoolGroups Management"))" />
+        <RadzenButton Text="Update Reviews/Ratings" Click="@(() => NavigateTo("Reviews Management"))" />
+        <RadzenButton Text="Update Reports" Click="@(() => NavigateTo("Reports Management"))" />
+
+    </RadzenStack>
+</RadzenCard>
+@code {
+    private void NavigateTo(string page)
+    {
+        NavigationManager.NavigateTo($"/Admin/{page}");
+    }
+}

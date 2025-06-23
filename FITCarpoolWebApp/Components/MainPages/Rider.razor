@@ -1,0 +1,218 @@
+﻿@page "/Rider/{TripID:int}"
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Logic_Models
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject Radzen.DialogService DialogService
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject IGroupMemberLocationsData _dbLocation
+@inject IGMapsAPI _GmapKey
+@inject IJSRuntime JSRuntime
+@inject ICarpoolGroupsData _dbGroups
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+@attribute [Authorize]
+<RadzenStack>
+    @if(TripID == null || !carpoolInProgress)
+    {
+        <MudText Typo="Typo.h3">ERROR</MudText>
+        <a href="https://play.google.com/store/apps/details?id=com.cutcom.apparmor.floridatech&pli=1" target="_blank">
+            <MudImage Src="https://www.fit.edu/media/site-specific/wwwfitedu/marketing-amp-comm/images/florida-tech-safe.JPG"
+                      Alt="Profile"
+                      Style="width: 100px; height: 100px; cursor: pointer;" />
+        </a>
+        <MudText Typo="Typo.h5">
+            Consider downloading Fl Tech Safe App for safety features!
+        </MudText>
+    }
+    else
+    {
+        <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+            <MudText Typo="Typo.h3" style="cursor:pointer;" @onclick="UserClickDriverLocInfo">View Driver Location Information</MudText>
+            <MudCollapse Expanded="driverLocationCollapsable">
+                <RadzenStack>
+                    <RadzenText Style="font-size: 16px;" Tag="h5" Class="text-primary">
+                        Driver: @DriverProfile.FirstName @DriverProfile.LastName
+                    </RadzenText>
+                    <MudText Typo="Typo.h3">Driver Location @@ @DriverLocation.Timestamp:</MudText>
+                </RadzenStack>
+                <MudCardContent>
+                    <RadzenGoogleMap @ref="googleMap" ApiKey="@MapApi" Style="width:100%; height:50vh;"
+                                     Center="new GoogleMapPosition() { Lat = DriverLocation.Latitude, Lng = DriverLocation.Longitude }" Zoom="zoom">
+                        <Markers>
+                            <RadzenGoogleMapMarker Title="@userLocationInfo" Position=@(new GoogleMapPosition() { Lat = @DriverLocation.Latitude, Lng = @DriverLocation.Longitude }) />
+                        </Markers>
+                    </RadzenGoogleMap>
+                </MudCardContent>
+            </MudCollapse>
+            <MudText Typo="Typo.h3" style="cursor:pointer;" @onclick="UserClickDriverInfo">View Driver Information</MudText>
+            <MudCollapse Expanded="driverInfoCollapsable">
+                <MudCardContent>
+                    <MudGrid>
+                        @if (DriverProfile.ProfilePicture != null)
+                        {
+                            <MudItem xs="12" md="4">
+                                <RadzenText Text="Driver Picture" Style="margin-bottom: 10px;" />
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(DriverProfile.ProfilePicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                            </MudItem>
+                        }
+                        @if (DriverProfile.CarPicture != null)
+                        {
+                            <MudItem xs="12" md="4">
+                                <RadzenText Text="Pickup Vehicle Picture" Style="margin-bottom: 10px;" />
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(DriverProfile.CarPicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                            </MudItem>
+                        }
+                        @if (DriverProfile.LicensePicture != null)
+                        {
+                            <MudItem xs="12" md="4">
+                                <RadzenText Text="Pickup Vehicle License Plate" Style="margin-bottom: 10px;" />
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(DriverProfile.LicensePicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudCardContent>
+            </MudCollapse>
+
+            <a href="https://play.google.com/store/apps/details?id=com.cutcom.apparmor.floridatech&pli=1" target="_blank">
+                <MudImage Src="https://www.fit.edu/media/site-specific/wwwfitedu/marketing-amp-comm/images/florida-tech-safe.JPG"
+                          Alt="Profile"
+                          Style="width: 100px; height: 100px; cursor: pointer;" />
+            </a>
+            <MudText Typo="Typo.h5">
+                Consider downloading Fl Tech Safe App for safety features!
+            </MudText>
+        </RadzenCard>
+    }
+</RadzenStack>
+
+@code {
+    [Parameter]
+    public int TripID { get; set; }
+    private bool driverLocationCollapsable = true;
+    private bool driverInfoCollapsable = true;
+    private int zoom = 16;
+    private string? MapApi = null;
+    private bool IsLocationAvailable = false;
+    private Location userLocation = new Location();
+    private string userLocationInfo = "Your Location";
+    private RadzenGoogleMap googleMap;
+    bool carpoolInProgress = false;
+    GroupMemberLocationsModel DriverLocation = new();
+    List<GroupMemberLocationsModel> DriverLocationList = new();
+    UsersModel InputModel = new();
+    private string userName = "Not found";
+    bool allowVirtualization = true;
+    private int LocationRefreshRate = 10;
+    private System.Threading.Timer? locationRefreshTimer;
+    private UserInfoModel DriverProfile = new();
+    protected override async Task OnInitializedAsync()
+    {
+        // Get google maps api key for location services later
+        MapApi = _GmapKey.MapAPI;
+        // Get user profile information
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            // Force the user back to the home page if no authentication is present
+            // Program should never arrive here but added to avoid errors
+            NavigationManager.NavigateTo("/", forceLoad: true);
+        }
+        List<UsersModel> UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            InputModel = UserList.First();
+        }
+        else
+        {
+            // Force the user back to the home page if no authentication is present
+            // Program should never arrive here but added to avoid errors
+            NavigationManager.NavigateTo("/", forceLoad: true);
+        }
+        // Check if the user is part of trip that has started
+        DriverLocationList = await _dbLocation.GetDriverLocations(TripID);
+        carpoolInProgress = DriverLocationList.Any();
+
+        if (carpoolInProgress)
+        {
+            await GetDriverLocation();
+            // Current driver location object, send this along with updated location to the database for riders to grab
+            DriverProfile = (await _dbUsers.GetUserInfoModel(DriverLocation.UserID));
+            await OnRefreshRateChanged(30);
+
+        }
+    }
+    private async Task GetDriverLocation()
+    {
+        DriverLocationList = await _dbLocation.GetDriverLocations(TripID);
+        DriverLocation = DriverLocationList.FirstOrDefault();
+        if (DriverLocation == null)
+        {
+            NavigationManager.NavigateTo("/rider", forceLoad: true);
+
+        }
+        //userLocationInfo = await _GmapKey.GetLocationInfoAsync(DriverLocation.Longitude, DriverLocation.Latitude);
+        //Console.WriteLine("Current User info " + userLocationInfo);
+        IsLocationAvailable = true;
+        await InvokeAsync(StateHasChanged); // Ensure UI is updated with new location
+
+    }
+    private class Location
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+    private async Task OnRefreshRateChanged(int value)
+    {
+        LocationRefreshRate = value;
+        // Convert refresh rate from seconds to milliseconds
+        int period = LocationRefreshRate * 1000;
+
+        if (locationRefreshTimer != null)
+        {
+            locationRefreshTimer.Change(0, period);
+        }
+        else
+        {
+            locationRefreshTimer = new System.Threading.Timer(async _ =>
+            {
+                await GetDriverLocation();
+            }, null, 0, period);
+        }
+    }
+    public void Dispose()
+    {
+        locationRefreshTimer?.Dispose();
+    }
+    public void UserClickDriverLocInfo()
+    {
+        driverLocationCollapsable = !driverLocationCollapsable;
+        StateHasChanged();
+    }
+    public void UserClickDriverInfo()
+    {
+        driverInfoCollapsable = !driverInfoCollapsable;
+        StateHasChanged();
+    }
+    private void NavigateTo(string url)
+    {
+        NavigationManager.NavigateTo(url, true);
+    }
+}

@@ -1,0 +1,105 @@
+﻿@page "/Privacy"
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+<h3>Privacy</h3>
+
+<EditForm FormName="profile" Model="Input"  method="post">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="form-group">
+        <label for="addressPrivacy">Address Privacy Setting</label>
+        <InputSelect id="addressPrivacy" class="form-control" @bind-Value="Input.AddressPrivacy">
+            @foreach (var option in privacyOptions)
+            {
+                <option value="@option">@option</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="form-group">
+        <label for="phonePrivacy">Phone Number Privacy Setting</label>
+        <InputSelect id="phonePrivacy" class="form-control" @bind-Value="Input.PhonePrivacy">
+            @foreach (var option in privacyOptions)
+            {
+                <option value="@option">@option</option>
+            }
+        </InputSelect>
+    </div>
+    <div>Current Phone Privacy: @Input.PhonePrivacy</div>
+    <div>Current Address Privacy: @Input.AddressPrivacy</div>
+
+    <button @onclick="UpdateUserData" class="btn btn-primary">Save</button>
+</EditForm>
+
+@code {
+    private string userName = "Not found";
+    private List<UsersModel> UserList = null;
+    UsersModel InputModel = new();
+    IEnumerable<string> privacyOptions = new List<string> { "Share With No One", "Share with Friends", "Share with Group Driver", "Share with Other Group Passengers" };
+    [SupplyParameterFromForm]
+    private PrivacyModel Input { get; set; } = new();
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("Intialized Runn Start");
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            userName = "Not found";
+        }
+
+        UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            InputModel = UserList.First();
+            Input.AddressPrivacy = InputModel.AddressPrivacy;
+            Input.PhonePrivacy = InputModel.PhonePrivacy;
+            Console.WriteLine(Input.AddressPrivacy);
+            Console.WriteLine(Input.PhonePrivacy);
+        }
+    }
+    public async Task UpdateUserData()
+    {
+        Console.WriteLine("Running Update");
+        Console.WriteLine(Input.AddressPrivacy);
+        Console.WriteLine(Input.PhonePrivacy);
+        try
+        {
+            InputModel.AddressPrivacy = Input.AddressPrivacy;
+            InputModel.PhonePrivacy = Input.PhonePrivacy;
+            await _dbUsers.UpdateUser(InputModel);
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Success, Summary = "Update Successful", Detail = "Your privacy settings have been updated." });
+        }
+        catch (Exception ex)
+        {
+            string message = $"Failed to update user. Error: {ex.Message}";
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Update Failed", Detail = message });
+        }
+        finally
+        {
+            NavigationManager.NavigateTo("/Privacy", forceLoad: true);
+        }
+    }
+    private sealed class PrivacyModel
+    {
+        [Display(Name = "Phone privacy")]
+        public string? PhonePrivacy { get; set; }
+        [Display(Name = "Address privacy")]
+
+        public string? AddressPrivacy { get; set; }
+
+    }
+}

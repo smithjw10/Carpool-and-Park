@@ -1,0 +1,644 @@
+﻿@page "/Group-Find"
+@using MudBlazor
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@inject IUsersData _dbUsers
+@inject ISchedulesData _dbSchedules
+@inject IGMapsAPI _GmapKey 
+@attribute [Authorize]
+
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%;">
+        <RadzenHeading Size="H2" Text="Group Recommendation (Test Users)" Style="text-align: center; margin-bottom: 20px;" />
+        @if (GroupRecommendations.Keys.Count == 0)
+        {
+            <div>
+                Loading...
+            </div>
+        }
+        @foreach (var group in GroupRecommendations.Keys)
+        {
+            if (GroupRecommendations[group])
+            {
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;  margin-top: 20px;">
+                    <RadzenHeading Size="H2" Text=@($"Group Recommendation {group + 1}") />
+                    <div>
+                        <RadzenButton Text="Join Group" Style="margin-right: 10px;" Shade="Shade.Light" ButtonStyle="ButtonStyle.Success" />
+                        <RadzenButton Text="Deny Recommendation" Shade="Shade.Light" ButtonStyle="ButtonStyle.Danger" Click="() => DenyGroup(group)" />
+                    </div>
+                </div>
+                <RadzenDataGrid Data="@RecommendationData[group]" TItem="UsersModel" AllowSorting="true">
+                    <Columns>
+
+                        <RadzenDataGridColumn TItem="UsersModel" Width="80px">
+                            <Template Context="user">
+                                @if (user.ProfilePicture != null)
+                                {
+                                    <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(user.ProfilePicture)}")" alt="Profile Picture" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                                }
+                                else
+                                {
+                                    <img src="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" alt="Default Profile" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="UsersModel" Property="Email" Title="Email" Width="200px" />
+                        <RadzenDataGridColumn TItem="UsersModel" Title="Name" Width="200px">
+                            <Template Context="user">
+                                @{
+                                    var fullName = $"{user.FirstName} {user.LastName}";
+                                }
+                                <text>@fullName</text>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="UsersModel" Title="Role" Width="100px">
+                            <Template Context="user">
+                                @{
+                                    var role = $"{user.UserType}";
+                                }
+                                <text>@role</text>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="UsersModel" Context="user" Width="140px">
+                            <Template>
+                                <RadzenButton Text="View User" Style="width: 100%; background-color: #D3D3D3; color: #333;" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        }
+    </RadzenCard>
+</RadzenStack>
+
+
+@code {
+    private string MapApi = "";
+    private Dictionary<int, bool> GroupRecommendations = new();
+    private Dictionary<int, List<UsersModel>> RecommendationData = new();
+    (double lat, double lon) campus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        MapApi = _GmapKey.MapAPI;
+
+        campus = await _GmapKey.GetCoordinatesAsync("150 W University Blvd, Melbourne, FL 32901");
+
+        // Gets test users
+        List<UsersModel> usersModels = getTestUsers();
+        List<SchedulesModel> schedulesModels = getTestSchedules();
+        List<Member> members = await getTestMembers(usersModels, schedulesModels);
+
+        // Creates test groups, will use groups from database in final project
+        List<Group> output = Test4Groups(members);
+        Console.WriteLine(output.Count);
+        Dictionary<Group, double> g_scores = new Dictionary<Group, double>();
+        // create a dictionary for groups to resolve awaits
+        foreach (Group g in output)
+        {
+            g_scores.Add(g, GroupScore(g));
+        }
+        output.Sort((x, y) => (g_scores[x]).CompareTo(g_scores[y]));
+
+        int count = 0;
+        foreach (Group g in output)
+        {
+            List<UsersModel> temp = new List<UsersModel>();
+            for (int i = 0; i < g.Members.Length; i++)
+            {
+                temp.Add(usersModels.First(u => u.UserId == g.Members[i].UserID));
+            }
+
+            RecommendationData.Add(count, temp);
+            count++;
+        }
+        foreach (var key in RecommendationData.Keys)
+        {
+            GroupRecommendations[key] = true;
+        }
+    }
+    private List<UsersModel> getTestUsers()
+    {
+        return new List<UsersModel>
+        {
+            new UsersModel {UserId = 0, UserType = "Driver", Email = "North1@my.fit.edu", FirstName = "North1", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "11 Rosevere Way, Melbourne, FL 32901" },
+            new UsersModel {UserId = 1, UserType = "Driver", Email = "North2@my.fit.edu", FirstName = "North2", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "false",
+            PickupLocation = "11 Rosevere Way, Melbourne, FL 32901" },
+            new UsersModel {UserId = 2, UserType = "Driver", Email = "North3@my.fit.edu", FirstName = "North3", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "11 Rosevere Way, Melbourne, FL 32901" },
+            new UsersModel {UserId = 3, UserType = "Driver", Email = "North4@my.fit.edu", FirstName = "North4", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "11 Rosevere Way, Melbourne, FL 32901" },
+            new UsersModel {UserId = 4, UserType = "Driver", Email = "East1@my.fit.edu", FirstName = "East1", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "true",
+            PickupLocation = "606 Walls St, Melbourne, FL 32901" },
+            new UsersModel {UserId = 5, UserType = "Driver", Email = "East2@my.fit.edu", FirstName = "East2", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "true",
+            PickupLocation = "606 Walls St, Melbourne, FL 32901" },
+            new UsersModel {UserId = 6, UserType = "Driver", Email = "East3@my.fit.edu", FirstName = "East3", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "false",
+            PickupLocation = "606 Walls St, Melbourne, FL 32901" },
+            new UsersModel {UserId = 7, UserType = "Driver", Email = "East4@my.fit.edu", FirstName = "East4", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "606 Walls St, Melbourne, FL 32901" },
+            new UsersModel {UserId = 8, UserType = "Driver", Email = "South1@my.fit.edu", FirstName = "South1", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "339 Cinnamon Lake Cir, Melbourne, FL 32901" },
+            new UsersModel {UserId = 9, UserType = "Driver", Email = "South2@my.fit.edu", FirstName = "South2", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "false",
+            PickupLocation = "339 Cinnamon Lake Cir, Melbourne, FL 32901" },
+            new UsersModel {UserId = 10, UserType = "Driver", Email = "South3@my.fit.edu", FirstName = "South3", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "339 Cinnamon Lake Cir, Melbourne, FL 32901" },
+            new UsersModel {UserId = 11, UserType = "Driver", Email = "South4@my.fit.edu", FirstName = "South4", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "339 Cinnamon Lake Cir, Melbourne, FL 32901" },
+            new UsersModel {UserId = 12, UserType = "Driver", Email = "West1@my.fit.edu", FirstName = "West1", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "true",
+            PickupLocation = "319 W University Blvd, Melbourne, FL 32901" },
+            new UsersModel {UserId = 13, UserType = "Driver", Email = "West2@my.fit.edu", FirstName = "West2", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "true",
+            PickupLocation = "319 W University Blvd, Melbourne, FL 32901" },
+            new UsersModel {UserId = 14, UserType = "Driver", Email = "West3@my.fit.edu", FirstName = "West3", LastName = "", AllowEatDrink = "true", AllowSmokeVape = "false",
+            PickupLocation = "319 W University Blvd, Melbourne, FL 32901" },
+            new UsersModel {UserId = 15, UserType = "Driver", Email = "West4@my.fit.edu", FirstName = "West4", LastName = "", AllowEatDrink = "false", AllowSmokeVape = "false",
+            PickupLocation = "319 W University Blvd, Melbourne, FL 32901" }
+        };
+    }
+    private List<SchedulesModel> getTestSchedules()
+    {
+        return new List<SchedulesModel>
+        {
+            new SchedulesModel {UserId = 0, Start = new DateTime(2024, 4, 12, 8, 30, 0), End = new DateTime(2024, 4, 12, 15, 0, 0) },
+            new SchedulesModel {UserId = 1, Start = new DateTime(2024, 4, 12, 7, 30, 0), End = new DateTime(2024, 4, 12, 16, 0, 0) },
+            new SchedulesModel {UserId = 2, Start = new DateTime(2024, 4, 12, 8, 45, 0), End = new DateTime(2024, 4, 12, 15, 30, 0) },
+            new SchedulesModel {UserId = 3, Start = new DateTime(2024, 4, 12, 8, 15, 0), End = new DateTime(2024, 4, 12, 15, 15, 0) },
+            new SchedulesModel {UserId = 4, Start = new DateTime(2024, 4, 12, 7, 45, 0), End = new DateTime(2024, 4, 12, 16, 15, 0) },
+            new SchedulesModel {UserId = 5, Start = new DateTime(2024, 4, 12, 8, 30, 0), End = new DateTime(2024, 4, 12, 16, 0, 0) },
+            new SchedulesModel {UserId = 6, Start = new DateTime(2024, 4, 12, 8, 0, 0), End = new DateTime(2024, 4, 12, 15, 45, 0) },
+            new SchedulesModel {UserId = 7, Start = new DateTime(2024, 4, 12, 9, 0, 0), End = new DateTime(2024, 4, 12, 15, 30, 0) },
+            new SchedulesModel {UserId = 8, Start = new DateTime(2024, 4, 12, 8, 30, 0), End = new DateTime(2024, 4, 12, 15, 0, 0) },
+            new SchedulesModel {UserId = 9, Start = new DateTime(2024, 4, 12, 7, 30, 0), End = new DateTime(2024, 4, 12, 16, 0, 0) },
+            new SchedulesModel {UserId = 10, Start = new DateTime(2024, 4, 12, 8, 45, 0), End = new DateTime(2024, 4, 12, 15, 30, 0) },
+            new SchedulesModel {UserId = 11, Start = new DateTime(2024, 4, 12, 8, 15, 0), End = new DateTime(2024, 4, 12, 15, 15, 0) },
+            new SchedulesModel {UserId = 12, Start = new DateTime(2024, 4, 12, 7, 45, 0), End = new DateTime(2024, 4, 12, 16, 15, 0) },
+            new SchedulesModel {UserId = 13, Start = new DateTime(2024, 4, 12, 8, 30, 0), End = new DateTime(2024, 4, 12, 16, 0, 0) },
+            new SchedulesModel {UserId = 14, Start = new DateTime(2024, 4, 12, 8, 0, 0), End = new DateTime(2024, 4, 12, 15, 45, 0) },
+            new SchedulesModel {UserId = 15, Start = new DateTime(2024, 4, 12, 9, 0, 0), End = new DateTime(2024, 4, 12, 15, 30, 0) }
+        };
+    }
+    private async Task<List<Member>> getTestMembers(List<UsersModel> allUsers, List<SchedulesModel> s)
+    {
+        List<Member> members = new List<Member>();
+        // var allUsers = await _dbUsers.GetAllUser();
+        foreach (UsersModel u in allUsers)
+        {
+            //List<SchedulesModel> schedules = await _dbSchedules.GetSchedule(u.UserId);
+            //SchedulesModel s = schedules.First();
+
+            Member m = new Member
+                {
+                    UserID = u.UserId,
+                    Name = u.FirstName + u.LastName,
+                    Location = await _GmapKey.GetCoordinatesAsync(u.PickupLocation),
+                    ArrivalH = s.First(sch => sch.UserId == u.UserId).Start.Hour,
+                    ArrivalM = s.First(sch => sch.UserId == u.UserId).Start.Minute,
+                    DepartureH = s.First(sch => sch.UserId == u.UserId).End.Hour,
+                    DepartureM = s.First(sch => sch.UserId == u.UserId).End.Minute,
+                    Early = 0,
+                    Preferences = new int[] { prefParser(u.AllowEatDrink), prefParser(u.AllowSmokeVape) }
+                };
+            members.Add(m);
+        }
+        return members;
+    }
+    private List<Group> Test2Groups(List<Member> members)
+    {
+        // CREATE PREDEFINED GROUPS FOR TESTING
+        // Get latest and earliest times, make them group creators.
+        Member earliest = members.First();
+        Member latest = members.First();
+        foreach (Member m in members)
+        {
+            if (m.ArrivalH * 60 + m.ArrivalM < earliest.ArrivalH * 60 + earliest.ArrivalM)
+            {
+                earliest = m;
+            }
+            if (m.ArrivalH * 60 + m.ArrivalM - m.Early >= latest.ArrivalH * 60 + latest.ArrivalM)
+            {
+                latest = m;
+            }
+        }
+        members.Remove(earliest);
+        members.Remove(latest);
+
+        // Instantiate New Groups
+        Group a = new Group
+            {
+                Name = "Group 1",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 1",
+                Members = new Member[4] { earliest, null, null, null }
+            };
+        Group b = new Group
+            {
+                Name = "Group 3",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 2",
+                Members = new Member[4] { latest, null, null, null }
+            };
+
+        // Greedily adds the least damaging group member
+        while (a.CurrentSize < a.MaxSize || b.CurrentSize < b.MaxSize)
+        {
+            TestAdd(a, members);
+            TestAdd(b, members);
+        }
+        return new List<Group> { a, b };
+    }
+    private List<Group> Test4Groups(List<Member> members)
+    {
+        // CREATE PREDEFINED GROUPS FOR TESTING
+
+        // Instantiate New Groups
+        Group a = new Group
+            {
+                Name = "Group 1",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 1",
+                Members = new Member[4] { members[0], null, null, null }
+            };
+        Group b = new Group
+            {
+                Name = "Group 2",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 2",
+                Members = new Member[4] { members[4], null, null, null }
+            };
+        Group c = new Group
+            {
+                Name = "Group 3",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 3",
+                Members = new Member[4] { members[8], null, null, null }
+            };
+        Group d = new Group
+            {
+                Name = "Group 4",
+                MaxSize = 4,
+                CurrentSize = 1,
+                Description = "Sample Group 4",
+                Members = new Member[4] { members[12], null, null, null }
+            };
+        members.Remove(members[12]);
+        members.Remove(members[8]);
+        members.Remove(members[4]);
+        members.Remove(members[0]);
+
+        // Greedily adds the least damaging group member
+        while (a.CurrentSize < a.MaxSize || b.CurrentSize < b.MaxSize || c.CurrentSize < c.MaxSize || d.CurrentSize < d.MaxSize)
+        {
+            TestAdd(a, members);
+            TestAdd(b, members);
+            TestAdd(c, members);
+            TestAdd(d, members);
+        }
+        return new List<Group> { a, b, c, d };
+    }
+
+    private int prefParser(string input)
+    {
+        if (input.Equals("true")) {
+            return 1;
+        }
+        else if (input.Equals("false"))
+        {
+            return 2;
+        }
+        return 0;
+    }
+
+    private void DenyGroup(int groupIndex)
+    {
+        if (GroupRecommendations.ContainsKey(groupIndex))
+        {
+            GroupRecommendations[groupIndex] = false;
+            StateHasChanged(); 
+        }
+    }
+
+    private void ViewUser(string userEmail)
+    {
+        NavigationManager.NavigateTo($"/Other-User-Details/{userEmail}");
+    }
+
+    public Group TestAdd(Group a, List<Member> members)
+    {
+        if (a.CurrentSize == a.MaxSize)
+        {
+            return a;
+        }
+
+        double bestScore = Double.MaxValue;
+        Member bestA = members.First();
+        foreach (Member m in members)
+        {
+            a.Members[a.CurrentSize] = m;
+            a.CurrentSize++;
+            double currScore = GroupScore(a);
+            if (currScore < bestScore)
+            {
+                bestA = m;
+                bestScore = currScore;
+            }
+            a.CurrentSize--;
+            a.Members[a.CurrentSize] = null;
+        }
+        a.Members[a.CurrentSize] = bestA;
+        members.Remove(bestA);
+        a.CurrentSize++;
+        return a;
+    }
+
+    public double GroupScore(Group g)
+    {
+        return DistanceScore(g);
+        //return 2 * TimeScore(g) + 10 * PreferenceScore(g);
+    }
+    // Calculates the difference between the earliest necessary arrival and the latest acceptable arrival
+    private double TimeScore(Group g)
+    {
+        int earliestH = g.Members[0].ArrivalH;
+        int earliestM = g.Members[0].ArrivalM;
+        int latestH = g.Members[0].ArrivalH;
+        int latestM = g.Members[0].ArrivalM;
+
+        int i = 1;
+        while (i < g.Members.Length && g.Members[i] != null)
+        {
+            Member m = g.Members[i];
+            if (m.ArrivalH * 60 + m.ArrivalM < earliestH * 60 + earliestM)
+            {
+                earliestH = m.ArrivalH;
+                earliestM = m.ArrivalM;
+            }
+            if (m.ArrivalH * 60 + m.ArrivalM - m.Early > latestH * 60 + latestM)
+            {
+                latestH = (m.ArrivalH * 60 + m.ArrivalM - m.Early) / 60;
+                latestM = (m.ArrivalH * 60 + m.ArrivalM - m.Early) % 60;
+            }
+            i++;
+        }
+
+        int earliestH2 = g.Members[0].DepartureH;
+        int earliestM2 = g.Members[0].DepartureM;
+        int latestH2 = g.Members[0].DepartureH;
+        int latestM2 = g.Members[0].DepartureM;
+
+        i = 1;
+        while (i < g.Members.Length && g.Members[i] != null)
+        {
+            Member m = g.Members[i];
+            if (m.ArrivalH * 60 + m.DepartureM < earliestH2 * 60 + earliestM2)
+            {
+                earliestH2 = m.DepartureH;
+                earliestM2 = m.DepartureM;
+            }
+            if (m.ArrivalH * 60 + m.DepartureM - m.Early > latestH2 * 60 + latestM2)
+            {
+                latestH2 = (m.ArrivalH * 60 + m.DepartureM - m.Early) / 60;
+                latestM2 = (m.ArrivalH * 60 + m.DepartureM - m.Early) % 60;
+            }
+            i++;
+        }
+        return (latestH - earliestH) * 60 + latestM - earliestM + ((latestH2 - earliestH2) * 60 + latestM2 - earliestM2);
+    }
+
+    private double CartDist((double lat, double lon) u1, (double lat, double lon) u2)
+    {
+        return Math.Sqrt((u1.lat - u2.lat) * (u1.lat - u2.lat) + (u1.lon - u2.lon) * (u1.lon - u2.lon));
+    }
+    private double DistanceScore(Group g)
+    {
+        (double lat, double lon)[] spots = new (double lat, double lon)[g.CurrentSize];
+        int count = 0;
+        while (count < g.Members.Length && g.Members[count] != null)
+        {
+            spots[count] = g.Members[count].Location;
+            count++;
+        }
+
+        double[,] distances = new double[spots.Length, spots.Length];
+        double[] final_stop = new double[spots.Length];
+        bool[] visited = new bool[spots.Length];
+        for (int i = 0; i < visited.Length; i++)
+        {
+            visited[i] = false;
+            final_stop[i] = CartDist(spots[i], campus);
+            distances[i, i] = 0;
+            for (int j = i + 1; j < visited.Length; j++)
+            {
+                double dist = CartDist(spots[i], spots[j]);
+                distances[i, j] = dist;
+                distances[j, i] = dist;
+            }
+        }
+
+        double total = 0;
+        for (int i = 0; i < visited.Length; i++)
+        {
+            visited[i] = true;
+            total += TreeSpan(distances, visited, final_stop, i, 0, visited.Length-1);
+            visited[i] = false;
+        }
+        total /= visited.Length;
+        return total;
+
+    }
+    private double TreeSpan(double[,] distances, bool[] visited, double[] final_stop, int curr, double dist, int no_left)
+    {
+        if (no_left == 0)
+        {
+            return dist + final_stop[curr];
+        }
+        double min = Double.MaxValue;
+        for (int i = 0; i < visited.Length; i++)
+        {
+            if (visited[i] != true)
+            {
+                visited[i] = true;
+                double next = TreeSpan(distances, visited, final_stop, i, dist + distances[curr, i], no_left - 1);
+                visited[i] = false;
+                if (next < min)
+                {
+                    min = next;
+                }
+            }
+        }
+        return min;
+    }
+
+    /*
+    private double LocationScore(Group g)
+    {
+        // List of Addresses
+        String[] spots = new String[g.CurrentSize + 1];
+        spots[0] = "150 W University Blvd, Melbourne, FL 32901";
+
+        int count = 0;
+        while (count < g.Members.Length && g.Members[count] != null)
+        {
+            spots[count + 1] = g.Members[count].Location;
+            count++;
+        }
+
+        // Sets Distances
+        // Limit API calls as much as possible
+        double[,] distances = new double[spots.Length, spots.Length];
+        bool[] visited = new bool[spots.Length];
+        for (int i = 0; i < visited.Length; i++)
+        {
+            visited[i] = false;
+            distances[i, i] = 0;
+            for (int j = i + 1; j < visited.Length; j++)
+            {
+                double dist = DistBtwn(spots[i], spots[j]);
+                distances[i, j] = dist;
+                distances[j, i] = dist;
+            }
+        }
+        visited[0] = true;
+        return TSP(distances, visited, 0, 1, 0, Double.MaxValue);
+    }
+    private double TSP(double[,] distances, bool[] visited, int curr, int depth, double cost, double answer)
+    {
+        // If every location is visited and the current is faster than the current optimal path, return the current path
+        if (depth == visited.Length)
+        {
+            if (answer > cost + distances[curr, 0] && curr != 0)
+            {
+                return cost + distances[curr, 0];
+            }
+            return answer;
+        }
+
+        // Visits every unvisited location
+        for (int i = 0; i < visited.Length; i++)
+        {
+            if (curr != i && visited[i] == false)
+            {
+                visited[i] = true;
+                answer = TSP(distances, visited, i, depth + 1, cost + distances[curr, i], answer);
+                visited[i] = false;
+            }
+        }
+        return answer;
+    }
+    */
+    // Counts every preference disagreemetn between members
+    private double PreferenceScore(Group g)
+    {
+        int no_preference = 0;
+        int conflictCount = 0;
+
+        int i = 0;
+        while(i < g.Members.Length && g.Members[i] != null)
+        {
+            int j = i + 1;
+            while (j < g.Members.Length && g.Members[j] != null)
+            {
+                for (int k = 0; k < g.Members[i].Preferences.Length; k++)
+                {
+                    if (g.Members[i].Preferences[k] != g.Members[j].Preferences[k] && g.Members[i].Preferences[k] != no_preference && g.Members[j].Preferences[k] != no_preference)
+                    {
+                        conflictCount++;
+                    }
+                }
+                j++;
+            }
+            i++;
+        }
+        return conflictCount;
+    }
+    // Placeholder for Google Maps API integ. Input parameters are addresses in text form. Outputs distance in Time.
+    public double DistBtwn(string loc1, string loc2)
+    {
+        string url = "https://maps.googleapis.com/maps/api/distancematrix/json?destinations=" + Uri.EscapeDataString(loc2) + "&origins=" + Uri.EscapeDataString(loc1) + "&key=" + MapApi;
+        System.Net.WebClient wc = new System.Net.WebClient();
+
+        byte[] resp = wc.DownloadData(url);
+        string raw = System.Text.Encoding.ASCII.GetString(resp);
+
+        request rq = JsonSerializer.Deserialize<request>(raw);
+
+        if (rq.rows[0].elements[0].status != "NOT_FOUND" && rq.rows[0].elements[0].status != "ZERO_RESULTS")
+        {
+            return rq.rows[0].elements[0].duration.value / 60;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    public class Group
+    {
+        public string? Name { get; set; }
+        public int MaxSize { get; set; }
+        public int CurrentSize { get; set; }
+        public string? Description { get; set; }
+        public Member[] Members { get; set; }
+    }
+    public class Member
+    {
+        public int UserID { get; set; }
+        public string? Name { get; set; }
+        public (double lat, double lon) Location { get; set; }
+        public int[] Preferences { get; set; }
+        public int ArrivalH { get; set; }
+        public int ArrivalM { get; set; }
+        public int DepartureH { get; set; }
+        public int DepartureM { get; set; }
+        public int Early { get; set; }
+    }
+
+    public class request
+    {
+
+        public class distance
+        {
+            public string text { get; set; }
+            public int value { get; set; }
+        }
+
+        public class duration
+        {
+            public string text { get; set; }
+            public int value { get; set; }
+        }
+
+        public class element
+        {
+            public distance distance { get; set; }
+            public duration duration { get; set; }
+            public string status { get; set; }
+
+        }
+        public class row
+        {
+            public element[] elements { get; set; }
+        }
+
+
+        public string[] destination_addresses { get; set; }
+        public string[] origin_addresses { get; set; }
+        public row[] rows { get; set; }
+        public string status { get; set; }
+
+    }
+}
+}

@@ -1,0 +1,92 @@
+﻿@page "/Admin/Roles Management"
+@using DataAccessLibrary.Model.Database_Models
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@layout AdminLayout
+@using System.Net.Http.Json
+@inject HttpClient httpClient
+@inject IRolesData _dbRoles
+@inject IDialogService DialogService
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    
+    @if (_addOpen)
+    {
+        <MudSelect T="string" @bind-Value=InputModel.ID>
+            @foreach(AccountModel account in AccountList)
+            {
+                <MudSelectItem Value="@account.Id">@account.UserName</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton @onclick="@AddUserOn" Color="Color.Error">Cancel</MudButton>
+        <MudButton @onclick="@SubmitUser" Color="Color.Success">Add User</MudButton>
+
+    } else {
+        <MudButton @onclick="@AddUserOn" Color="Color.Success">Add User</MudButton>
+    }
+    <MudDataGrid T="RolesModel" Items="RolesList" Bordered="true" Dense="true" >
+        <Columns>
+            <PropertyColumn Property="x => x.UserName" Title="Email" />
+            <PropertyColumn Property="x => x.RoleName" Title="RoleName" />
+             <TemplateColumn Title="Actions">
+                 <CellTemplate>
+                     <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteUser(context.Item))" />
+                 </CellTemplate>
+             </TemplateColumn>
+         </Columns>
+     </MudDataGrid>
+ </RadzenCard>
+
+
+@code {
+    private List<RolesModel> RolesList = new();
+    private List<AccountModel> AccountList = new();
+    private RolesModel InputModel = new RolesModel();
+    private string accountID = "";
+    private string _searchString;
+    bool _addOpen = false;
+    protected override async Task OnInitializedAsync()
+    {
+        RolesList = await _dbRoles.GetUserRoles();
+        AccountList = await _dbRoles.GetAccounts();
+    }
+    public void ResetInputs()
+    {
+        _addOpen = false;
+        accountID = "";
+        InputModel = new RolesModel();
+    }
+    public void AddUserOn()
+    {
+        _addOpen = !_addOpen;
+    }
+    public async Task SubmitUser()
+    {
+        if (!InputModel.ID.Equals(""))
+        {
+            await _dbRoles.AddAdmin(InputModel);
+            RolesList = await _dbRoles.GetUserRoles();
+            ResetInputs();
+        }
+    }
+    async Task DeleteUser(RolesModel user)
+    {
+        var parameters = new MudBlazor.DialogParameters();
+        parameters.Add("ContentText", $"Are you sure you want to delete {user.UserName}?");
+        parameters.Add("ButtonText", "Delete");
+        parameters.Add("Color", Color.Error);
+        var dialog = DialogService.Show<ConfirmationDialog>("Delete User", parameters);
+        var result = await dialog.Result;
+        Console.WriteLine(user.ID);
+        if (!result.Cancelled)
+        {
+            Console.WriteLine("Enter");
+            await _dbRoles.DeleteUserRole(user);
+            RolesList.Remove(user);
+            StateHasChanged(); 
+        }
+    }
+}

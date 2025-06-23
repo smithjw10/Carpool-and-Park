@@ -1,0 +1,26 @@
+﻿@using DataAccessLibrary.Model
+<input @bind="model.Address" class="form-control" placeholder="Enter Stop" />
+@if (_isLast)
+{
+    <MudIconButton Icon="@Icons.Material.Filled.Add" @onclick="() => AddStop(model.Id)"> </MudIconButton>
+}
+<MudIconButton Icon="@Icons.Material.Filled.Delete" @onclick="() => RemoveStop(model)"> </MudIconButton>
+
+@code {
+    [Parameter]
+    public DirectionsStop model { get; set; } = new DirectionsStop();
+    [Parameter]
+    public bool _isLast { get; set; } = false;
+    [Parameter]
+    public EventCallback<int> OnAddStop { get; set; }
+    [Parameter]
+    public EventCallback<DirectionsStop> OnRemoveStop { get; set; }
+    public void AddStop(int id)
+    {
+        OnAddStop.InvokeAsync(id);
+    }
+    public void RemoveStop(DirectionsStop id)
+    {
+        OnRemoveStop.InvokeAsync(id);
+    }
+}

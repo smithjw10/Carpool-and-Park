@@ -1,0 +1,345 @@
+﻿@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject Radzen.DialogService DialogService
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject ISchedulesData _dbSchedules
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+@attribute [Authorize]
+@page "/Profile"
+<h3>Update User Profile</h3>
+<RadzenStack>
+    @if (InputModel != null)
+    {
+        <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:100%">
+            @*Profile Information *@
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <RadzenStack>
+                        <MudText Typo="Typo.h2" Align="Align.Center">Basic Info</MudText>
+
+                        <RadzenLabel Text="First Name" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.FirstName" Placeholder="First Name" Style="width:100%;  margin-bottom:5px;" />
+
+                        <RadzenLabel Text="Last Name" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.LastName" Placeholder="Last Name" Style="width:100%;  margin-bottom:5px;" />
+
+                        <RadzenLabel Text="Phone Number" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.Phone" Placeholder="Phone Number" Style="width:100%;  margin-bottom:5px;" />
+
+          
+
+                        <RadzenLabel Text="Select Gender" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenDropDown @bind-Value=@InputModel.Gender Data=@genderData Style="width:100%;  margin-bottom:5px;" />
+
+                        <RadzenLabel Text="Select Role" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenDropDown @bind-Value=@InputModel.UserType Data=@rolesData Style="width:100%;  margin-bottom:5px;" />
+
+                        <MudText Typo="Typo.h2" Align="Align.Left">Location Info</MudText>
+
+                        <RadzenLabel Text="Address" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.UserLocation" Placeholder="Address" Style="width:100%;  margin-bottom:5px;" />
+
+                        <RadzenLabel Text="Pick-up Location" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.PickupLocation" Placeholder="Pick-up Location" Style="width:100%;  margin-bottom:5px;" />
+
+                        <RadzenLabel Text="Drop-off Location" Style="display: block; margin-bottom: 5px;" />
+                        <RadzenTextBox @bind-Value="@InputModel.DropoffLocation" Placeholder="Drop-off Location" Style="width:100%;  margin-bottom:5px;" />
+
+                        @if (InputModel.UserType.Equals("driver"))
+                        {
+                            <RadzenLabel Text="Driving Distance (in miles)" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenNumeric @bind-Value="@InputModel.DrivingDistance" Placeholder="Driving Distance (in miles)" Style="width: 100%;  margin-bottom:5px;" Min="0" Step="1" />
+                        }
+
+                        <RadzenText TextStyle="TextStyle.Subtitle2" TagName="TagName.H3" Style="display: block; margin-bottom: 5px;">Profile Picture Upload</RadzenText>
+                        <RadzenUpload @ref="ProfileUpload" Auto="false" Multiple="false" Url="@(uploadUrlProfile)" InputAttributes="@(new Dictionary<string,object>(){ { "aria-label", "select file" }})" class="w-100" Accept="image/*" Style=" margin-bottom:5px;" />
+
+                        @if (InputModel.ProfilePicture != null)
+                        {
+                            <RadzenText Text="Current Profile Picture" Style="margin-bottom: 10px;" />
+                            <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(InputModel.ProfilePicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                        }
+                    </RadzenStack>
+                </MudItem>
+
+                @*Driver Only Section*@
+                @if (InputModel.UserType.Equals("driver"))
+                {
+                    <MudItem xs="12" md="6">
+                        <RadzenStack>
+                            <MudText Typo="Typo.h2" Align="Align.Center">Vehicle Info</MudText>
+
+                            <RadzenLabel Text="Number of Functional Seatbelts" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenNumeric @bind-Value="@InputModel.BeltCount" Placeholder="Number of Functional Seatbelts" Style="width:100%;  margin-bottom:5px;" />
+
+                            <RadzenLabel Text="Manufacturer and Model" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenTextBox @bind-Value="@InputModel.MakeModel" Placeholder="Manufacturer and Model" Style="width:100%;  margin-bottom:5px;" />
+
+                            <RadzenLabel Text="Vehicle Color" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenTextBox @bind-Value="@InputModel.VehicleColor" Placeholder="Vehicle Color" Style="width:100%;  margin-bottom:5px;" />
+
+                            <RadzenLabel Text="License Plate Number" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenTextBox @bind-Value="@InputModel.LicensePlate" Placeholder="License Plate Number" Style="width:100%;  margin-bottom:5px;" />
+
+                            <RadzenLabel Text="Allow Eating & Drinking in the car" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenCheckBox @bind-Value="@allowEatingDrink" Text="Allow eat/drink in the car" Style=" margin-bottom:5px;" />
+
+                            <RadzenLabel Text="Allow Smoking in the car" Style="display: block; margin-bottom: 5px;" />
+                            <RadzenCheckBox @bind-Value="@allowSmoking" Text="Allow smoking in the car" Style=" margin-bottom:5px;" />
+
+                            <RadzenText TextStyle="TextStyle.Subtitle2" TagName="TagName.H3" Style="display: block; margin-bottom: 5px;">License Picture Upload</RadzenText>
+                            <RadzenUpload @ref="LicenseUpload" Auto="false" Multiple="false" Url="@(uploadUrlLicense)" InputAttributes="@(new Dictionary<string,object>(){ { "aria-label", "select file" }})" class="w-100" Accept="image/*" Style=" margin-bottom:5px;" />
+
+                            @if (InputModel.LicensePicture != null)
+                            {
+                                <RadzenText Text="Current License Picture" Style="margin-bottom: 10px;" />
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(InputModel.LicensePicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                            }
+
+                            <RadzenText TextStyle="TextStyle.Subtitle2" TagName="TagName.H3" Style="display: block; margin-bottom: 5px;">Vehicle Picture Upload</RadzenText>
+                            <RadzenUpload @ref="CarUpload" Auto="false" Multiple="false" Url="@(uploadUrlCar)" InputAttributes="@(new Dictionary<string,object>(){ { "aria-label", "select file" }})" class="w-100" Accept="image/*" Style=" margin-bottom:5px;" />
+
+                            @if (InputModel.CarPicture != null)
+                            {
+                                <RadzenText Text="Current Vehicle Picture" Style="margin-bottom: 10px;" />
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(InputModel.CarPicture)}")" AlternateText="binary image" Style="max-width:200px; max-height:200px; display:block;  margin-bottom:5px;" />
+                            }
+
+                        </RadzenStack>
+                    </MudItem>
+                }
+
+                <MudItem xs="12">
+                    <RadzenButton IsBusy=@_busyUpdate Click=@(args => UpdateUserData()) Text="Update Profile Data" ButtonStyle="ButtonStyle.Primary" Style="width:100%;" />
+                </MudItem>
+            </MudGrid>
+
+
+            @*Schedule Section*@
+            <MudText Typo="Typo.h2" Align="Align.Center">Edit Schedule</MudText>
+            <RadzenScheduler @ref=@scheduler SlotRender=@OnSlotRender style="height: 85vh;" TItem="SchedulesModel" Data=@ListSchedules StartProperty="Start" EndProperty="End"
+                                TextProperty="Text" SelectedIndex="2"
+                                SlotSelect=@OnSlotSelect AppointmentSelect=@OnAppointmentSelect AppointmentRender=@OnAppointmentRender star>
+
+                <RadzenMonthView />
+                <RadzenDayView />
+                <RadzenWeekView />
+            </RadzenScheduler>
+        </RadzenCard>
+    }else
+    {
+        @*Error Section*@
+        <MudText Typo="Typo.h6">Your account was created before full integration, please delete your account under user management and create a new account</MudText>
+    }
+</RadzenStack>
+
+@code {
+    private List<UsersModel> UserList = null;
+    private string uploadUrlLicense = "";
+    private string uploadUrlCar = "";
+    private string uploadUrlProfile = "";
+    bool _busyUpdate = false;
+    UsersModel InputModel = new();
+    // Logic added for creating user preference
+    RadzenUpload ProfileUpload = null;
+    RadzenUpload LicenseUpload = null;
+    RadzenUpload CarUpload = null;
+    Dictionary<DateTime, string> events = new Dictionary<DateTime, string>();
+    string gender = "Other";
+    private string userName = "Not found";
+    bool allowEatingDrink;
+    bool allowSmoking;
+    int progress;
+    string info;
+    IEnumerable<string> genderData = new string[] { "Male", "Female", "Non-binary", "Genderqueer", "Agender", "Bigender", "Genderfluid", "Two-Spirit", "Other" };
+    IEnumerable<string> rolesData = new string[] { "rider", "driver" };
+    IEnumerable<string> privacyOptions = new List<string> { "Share With No One", "Share with Friends", "Share with Group Driver", "Share with Other Group Passengers" };
+    // Schedule
+    RadzenScheduler<SchedulesModel> scheduler = new();
+    List<SchedulesModel> ListSchedules = new();
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            userName = "Not found";
+        }
+        UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            InputModel = UserList.First();
+
+            PrepareUploadUrl();
+            bool success = bool.TryParse(InputModel.AllowSmokeVape, out allowSmoking);
+            if (!success)
+            {
+                allowEatingDrink = false;
+            }
+            success = bool.TryParse(InputModel.AllowEatDrink, out allowEatingDrink);
+            if (!success)
+            {
+                allowEatingDrink = false;
+            }
+            // Get Schedule info 
+
+            ListSchedules = await _dbSchedules.GetSchedule(InputModel.UserId);
+        }
+    }
+
+    private void PrepareUploadUrl()
+    {
+        var userId = InputModel.UserId;
+        uploadUrlProfile = $"/FileUpload/upload/{InputModel.UserId}";
+        uploadUrlLicense = $"/FileUpload/upload/license/{InputModel.UserId}";
+        uploadUrlCar = $"/FileUpload/upload/car/{InputModel.UserId}";
+
+    }
+    IList<SchedulesModel> appointments = new List<SchedulesModel>();
+    void OnSlotRender(SchedulerSlotRenderEventArgs args)
+    {
+
+    }
+
+    async Task OnSlotSelect(SchedulerSlotSelectEventArgs args)
+    {
+        Console.WriteLine($"Slot Selected: {args.Start} to {args.End}");
+
+        if (args.View.Text != "Year")
+        {
+
+            SchedulesModel data = await DialogService.OpenAsync<AddSchedulePage>("Add Schedule",
+            new Dictionary<string, object> { { "Start", args.Start }, { "End", args.End }, { "UserID", InputModel.UserId }, { "OnAddSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(AddSchedule))  }});
+
+            if (data != null)
+            {
+                appointments.Add(data);
+                // Either call the Reload method or reassign the Data property of the Scheduler
+            }
+            await scheduler.Reload();
+
+        }
+    }
+
+    async Task OnAppointmentSelect(SchedulerAppointmentSelectEventArgs<SchedulesModel> args)
+    {
+        Console.WriteLine($"Appt Selected: {args.Start} to {args.End}");
+
+        var copy = new SchedulesModel
+            {
+                Start = args.Data.Start,
+                End = args.Data.End,
+                Text = args.Data.Text,
+            };
+        var matchingSchedule = ListSchedules.FirstOrDefault(schedule => 
+            schedule.UserId == InputModel.UserId &&
+            schedule.Start == args.Start &&
+            schedule.End == args.End);
+        if(matchingSchedule == null)
+        {
+            return;
+        }
+        var data = await DialogService.OpenAsync<EditSchedulePage>("Edit Appointment", new Dictionary<string, object> { { "CurrSchedule", matchingSchedule }, { "OnDeleteSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(DeleteSchedule)) }, { "OnEditSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(EditSchedule)) } });
+
+        if (data != null)
+        {
+            // Update the appointment
+            args.Data.Start = data.Start;
+            args.Data.End = data.End;
+            args.Data.Text = data.Text;
+        }
+
+        await scheduler.Reload();
+    }
+
+    void OnAppointmentRender(SchedulerAppointmentRenderEventArgs<SchedulesModel> args)
+    {
+
+        if (args.Data.Text == "arrival")
+        {
+            args.Attributes["style"] = "background: red";
+        }
+    }
+    void OnProgress(UploadProgressArgs args, string name)
+    {
+        this.info = $"% '{name}' / {args.Loaded} of {args.Total} bytes.";
+        this.progress = args.Progress;
+    }
+    // Method to update user database table 
+    async Task UpdateUserData(){
+        _busyUpdate = true;
+        InputModel.AllowSmokeVape = allowSmoking.ToString();
+        InputModel.AllowEatDrink = allowEatingDrink.ToString();
+        try
+        {
+            await _dbUsers.UpdateUser(InputModel);
+            if(ProfileUpload != null)
+            {
+                await ProfileUpload.Upload();
+
+            }
+            if(LicenseUpload != null)
+            {
+                await LicenseUpload.Upload();
+
+            }
+            if (CarUpload != null)
+            {
+                await CarUpload.Upload();
+
+            }
+
+        } catch(Exception ex)
+        {
+            string message = $"Failed to update {InputModel.FirstName} {InputModel.LastName}. Error {ex.Message} ";
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = message });
+        }
+        finally
+        {
+            NavigationManager.NavigateTo("/Profile", forceLoad: true);
+        }
+
+    }
+    public void AddSchedule(SchedulesModel schedule)
+    {
+        _dbSchedules.AddSchedule(schedule);
+        ListSchedules.Add(schedule);
+    }
+    public void DeleteSchedule(SchedulesModel schedule)
+    {
+        _dbSchedules.DeleteSchedule(schedule.ScheduleId);
+        ListSchedules.Remove(schedule);
+    }
+    public void EditSchedule(SchedulesModel schedule)
+    {
+        var matchingSchedule = ListSchedules.FirstOrDefault(schedule1 =>
+            schedule1.UserId == InputModel.UserId &&
+            schedule1.Start == schedule.Start &&
+            schedule1.End == schedule.End);
+        if (matchingSchedule != null)
+        {
+            ListSchedules.Remove(matchingSchedule);
+
+        }
+        _dbSchedules.UpdateSchedule(schedule);
+        ListSchedules.Add(schedule);
+
+    }
+}   

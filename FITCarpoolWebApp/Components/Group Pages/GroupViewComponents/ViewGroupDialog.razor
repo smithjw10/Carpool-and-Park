@@ -1,0 +1,160 @@
+﻿@using DataAccessLibrary.Model.Logic_Models
+@inject Radzen.DialogService DialogService
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Radzen
+@inject NavigationManager Navigation
+@using MudBlazor
+@inject IJSRuntime js
+
+
+<MudPaper Class="modern-card">
+    <div class="Group-Member-Class">
+
+        @foreach (UserInfoModel groupMem in CurrentGroup.GroupMembers)
+        {
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="member-card" Style="cursor: pointer;" @onclick="() => OpenUserProfileInNewTab(groupMem.UserName)">
+                        <div class="member-info">
+                            <div class="member-image">
+                                <img src="@GetImageSource(groupMem.ProfilePicture)" alt="Profile Image" />
+                            </div>
+                            <div class="member-details">
+                                <span>@groupMem.FirstName @groupMem.LastName</span>
+                            </div>
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+
+        <MudGrid>
+            <MudItem xs="12" md="12">
+                <!-- Add Horizontal Radio Buttons -->
+                <MudRadioGroup T="string" @bind-Value="selectedView">
+                    <MudRadio T="string" Value="map" Color="MudBlazor.Color.Primary">Group Map</MudRadio>
+                    <MudRadio T="string" Value="preferences" Color="MudBlazor.Color.Primary">Group Preferences</MudRadio>
+                </MudRadioGroup>
+            </MudItem>
+            <MudItem xs="12" md="12">
+                <MudButton FullWidth="true" Color="Color.Error" Class="close-button" OnClick="CloseDialog">Close</MudButton>
+            </MudItem>
+        </MudGrid>
+        <MudGrid Justify="Justify.Center">
+            <MudItem xs="12">
+                @if (selectedView.Equals(map))
+                {
+                        <div class="Group-Member-Class">
+                        <GroupMapViewComponent GroupRecommendation="CurrentGroup"></GroupMapViewComponent>
+                    </div>
+                }
+                else
+                {
+                    <PreferenceMatrixComponent GroupRecommendation="CurrentGroup"></PreferenceMatrixComponent>
+
+                }
+            </MudItem>
+
+
+        </MudGrid>
+    </div>
+</MudPaper>
+
+@code {
+
+    [Parameter] public RecomendedGroup CurrentGroup { get; set; }
+    private string selectedView { get; set; } = "Map";
+    private string map = "Map";
+        private string preferences = "Preferences";
+
+    private async Task OpenUserProfileInNewTab(string username)
+    {
+        if (string.IsNullOrEmpty(username))
+        {
+            username = "Profile_Tester@my.fit.edu";
+        }
+
+        // Get the base URL (without the current path, just the protocol and host)
+        var baseUrl = Navigation.BaseUri;
+
+        // Construct the full URL by appending the desired path to the base URL
+        var fullUrl = $"{baseUrl}Other-User-Details/{username}";
+
+        // Open in a new tab
+        await js.InvokeVoidAsync("openInNewTab", fullUrl);
+    }
+    private string GetImageSource(byte[] profilePicture)
+    {
+        if (profilePicture == null || profilePicture.Length == 0)
+        {
+            return "images/avatar.png";
+        }
+
+        var base64Image = Convert.ToBase64String(profilePicture);
+        return $"data:image/png;base64,{base64Image}";
+    }
+    private void CloseDialog()
+    {
+        DialogService.Close();
+    }
+}
+
+<style>
+/* Add modern styling for mobile friendly design */
+
+    .modern-card {
+        position: relative;
+        padding: 16px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        background-color: #fff;
+        margin-bottom: 20px;
+    }
+
+
+.Group-Member-Class {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.member-card {
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background-color: #f8f9fa;
+}
+
+.member-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.member-image img {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.member-details {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* Mobile-friendly responsiveness */
+@@media (max-width: 768px) {
+    .member-card {
+        flex-direction: column;
+        text-align: center;
+    }
+    .member-image img {
+        margin-bottom: 10px;
+    }
+}
+    /* Close button styling */
+</style>

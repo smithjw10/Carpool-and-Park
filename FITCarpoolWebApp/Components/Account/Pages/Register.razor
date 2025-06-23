@@ -1,0 +1,270 @@
+﻿@page "/Account/Register"
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using FITCarpoolWebApp.Components.Layout
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject ILogger<Register> Logger
+@inject NavigationManager NavigationManager
+@inject Radzen.DialogService DialogService
+@inject IGMapsAPI _googleAPI;
+@inject ILocationData _dbLocation;
+@inject IdentityRedirectManager RedirectManager
+@using MudBlazor
+@using Radzen.Blazor
+
+@*Add DB source for users , Trip Stats and preferences table*@
+@inject IUsersData _dbUsers;
+@inject IPreferencesData _dbPreferences
+@inject ITripStatisticsData _dbTripStat
+@inject IPreferencesData _dbPrefs
+
+
+
+<PageTitle>Register</PageTitle>
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <MudText Typo="Typo.h1" Align="Align.Center">Register</MudText>
+    <StatusMessage Message="@Message" />
+    <EditForm Model="Input" asp-route-returnUrl="@ReturnUrl" method="post" OnValidSubmit="RegisterUser" FormName="register">
+        <DataAnnotationsValidator />
+        <hr />
+        <ValidationSummary class="text-danger" role="alert" />
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@my.fit.edu" />
+            <label for="email">Email</label>
+            <ValidationMessage For="() => Input.Email" class="text-danger" />
+        </div>
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.FirstName" class="form-control" autocomplete="First Name" aria-required="true" placeholder="First Name" />
+            <label for="Firstname">First Name</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.LastName" class="form-control" autocomplete="Last Name" aria-required="true" placeholder="Last Name" />
+            <label for="Lastname">Last Name</label>
+        </div>
+        <div class="form-floating mb-3">
+            <InputText type="password" @bind-Value="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Password" />
+            <label for="password">Password</label>
+            <ValidationMessage For="() => Input.Password" class="text-danger" />
+        </div>
+        <div class="form-floating mb-3">
+            <InputText type="password" @bind-Value="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Confirm Password" />
+            <label for="confirm-password">Confirm Password</label>
+            <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+        </div>
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.UsersPhoneNumber" class="form-control" autocomplete="tel" aria-required="true" placeholder="Phone Number" />
+            <label for="phone">Phone Number</label>
+        </div>
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.UserLocation" class="form-control" autocomplete="tel" aria-required="true" placeholder="User Location" />
+            <label for="Location">Home Address</label>
+        </div>
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.PickupLocation" class="form-control" autocomplete="tel" aria-required="false" placeholder="Pickup Location" />
+            <label for="PickupLocation">Pickup Location</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputNumber @bind-Value="Input.DrivingDistance" class="form-control" placeholder="Driving Distance in miles" />
+            <label for="DrivingDistance">Driving Distance (miles)</label>
+        </div>
+        <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+    </EditForm>
+</RadzenCard>
+
+@code {
+    // Added to support other database operations
+    string FirstName = "";
+    string LastName = "";
+    string role = "rider";
+    string UsersPhoneNumber = "";
+    string UserLocation = "";
+    string PickupLocation = "";
+    string DropLocation = "150 W University Blvd, Melbourne, FL 32901";
+    int DrivingDistance = 30;
+    double Rating;
+    bool isHomeDiffPick = false;
+    private IEnumerable<IdentityError>? identityErrors;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
+
+    public async Task RegisterUser(EditContext editContext)
+    {
+        var user = CreateUser();
+
+        await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
+        var emailStore = GetEmailStore();
+        await emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+        var result = await UserManager.CreateAsync(user, Input.Password);
+
+        if (!result.Succeeded)
+        {
+            identityErrors = result.Errors;
+            return;
+        }
+        await SignInManager.SignInAsync(user, isPersistent: false);
+
+        Logger.LogInformation("User created a new account with password.");
+        Console.WriteLine("Running User Update");
+        // Add the users to the custom database tables that we made
+        UsersModel createdUser = new UsersModel(
+            Input.Email,
+            Input.FirstName,
+            Input.LastName,
+            Input.UsersPhoneNumber,
+            "rider",
+            Input.UserLocation,
+            Input.PickupLocation,
+            Input.DropLocation,
+            Input.DrivingDistance,
+            Input.Rating);
+        if (String.IsNullOrWhiteSpace(Input.PickupLocation))
+        {
+            Input.PickupLocation = Input.UserLocation;
+        }
+        createdUser.DropoffLocation = DropLocation;
+        await _dbUsers.AddUser(createdUser);
+        (double latitude, double longitude) = await _googleAPI.GetCoordinatesAsync(Input.PickupLocation);
+        double dropLat = 28.066750;
+        double dropLon = -80.623032;
+        UsersModel currUser = (await _dbUsers.GetUser(createdUser.Email)).FirstOrDefault();
+        await _dbLocation.AddPickupandDropOff(currUser.UserId, longitude, latitude, dropLon, dropLat);
+        PreferencesModel InputModelPref = new PreferencesModel(currUser.UserId);
+        await _dbPrefs.AddUser(InputModelPref.UserId);
+        // Procceed with normal user creation using .net authentication 
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+        NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+        new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code, ["returnUrl"] = ReturnUrl });
+
+        await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        if (UserManager.Options.SignIn.RequireConfirmedAccount)
+        {
+
+            RedirectManager.RedirectTo(
+                "Account/RegisterConfirmation",
+                new() { ["email"] = Input.Email, ["returnUrl"] = ReturnUrl });
+        }
+
+
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private ApplicationUser CreateUser()
+    {
+        try
+        {
+
+            return Activator.CreateInstance<ApplicationUser>();
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Can't create an instance of '{nameof(ApplicationUser)}'. " +
+                $"Ensure that '{nameof(ApplicationUser)}' is not an abstract class and has a parameterless constructor.");
+        }
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException("The default UI requires a user store with email support.");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        [Display(Name = "Email")]
+        [EmailDomain("my.fit.edu", ErrorMessage = "Email must be in the domain 'my.fit.edu'.")]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+
+        [Required]
+        [Display(Name = "First Name")]
+        public string FirstName { get; set; } = "";
+
+        [Required]
+        [Display(Name = "Last Name")]
+        public string LastName { get; set; } = "";
+
+        [Required]
+        [Display(Name = "Phone Number")]
+        [Phone(ErrorMessage = "Invalid phone number format.")]
+        public string UsersPhoneNumber { get; set; } = "";
+
+        [Required]
+        [Display(Name = "User Location")]
+        public string UserLocation { get; set; } = "";
+
+        [Display(Name = "Pickup Location")]
+        public string PickupLocation { get; set; } = "";
+
+        [Display(Name = "Dropoff Location")]
+        public string DropLocation { get; set; } = "";
+
+        [Range(0, int.MaxValue, ErrorMessage = "Driving Distance must be a positive number.")]
+        [Display(Name = "Driving Distance (miles)")]
+        public int DrivingDistance { get; set; } = 30;
+
+        public double Rating { get; set; }
+    }
+    public class EmailDomainAttribute : ValidationAttribute
+    {
+        private readonly string _domain;
+
+        public EmailDomainAttribute(string domain)
+        {
+            _domain = domain;
+        }
+
+        public override bool IsValid(object value)
+        {
+            if (value is string email)
+            {
+                string domain = email.Substring(email.IndexOf('@') + 1);
+                return domain.ToLower() == _domain.ToLower();
+            }
+            return false;
+        }
+
+        public override string FormatErrorMessage(string name)
+        {
+            return $"The domain of the {name} must be {_domain}.";
+        }
+    }
+
+}

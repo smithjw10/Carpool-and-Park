@@ -1,0 +1,106 @@
+﻿@page "/Admin/Reports Management"
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@layout AdminLayout
+@using System.Net.Http.Json
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject IReportsData _dbReports
+@inject IDialogService DialogService
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <MudDataGrid T="ReportedUserModel" Items="ReportedUsersList" Bordered="true" Dense="true" ReadOnly="false" EditMode="MudBlazor.DataGridEditMode.Form ">
+        <Columns>
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteReport(context.Item))" />
+                </CellTemplate>
+            </TemplateColumn>
+
+            <TemplateColumn Title="Reported User">
+                <CellTemplate>
+                    @{
+                        var report = context.Item as ReportedUserModel;
+                        <div>@($"{report.User.FirstName} {report.User.LastName}")</div>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            
+            <TemplateColumn Title="Reports">
+                <CellTemplate>
+                    @foreach (var reportReason in context.Item.ReportReason)
+                    {
+                        <MudText>@reportReason</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
+            <TemplateColumn Title="Reports">
+                <CellTemplate>
+                    @foreach (var reportText in context.Item.ReportTexts)
+                    {
+                        <MudText>@reportText</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+
+        </Columns>
+    </MudDataGrid>
+</RadzenCard>
+
+@code {
+    private List<ReportedUserModel> ReportedUsersList = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var users = await _dbUsers.GetAllUser(); 
+
+        foreach (var user in users)
+        {
+            var reportTexts = await _dbReports.GetReportsText(user.UserId);
+            var reportReason = await _dbReports.GetReportsReason(user.UserId);
+            if (reportTexts.Count > 0)
+            {
+                ReportedUsersList.Add(new ReportedUserModel
+                    {
+                        User = user,
+                        ReportTexts = reportTexts,
+                        ReportReason = reportReason
+            });
+            }
+        }
+    }
+
+    async Task DeleteReport(ReportedUserModel report)
+    {
+        var parameters = new DialogParameters
+            {
+                ["ContentText"] = $"Are you sure you want to delete this report for {report.User.FirstName} {report.User.LastName}?",
+                ["ButtonText"] = "Delete",
+                ["Color"] = Color.Error
+            };
+        var dialog = DialogService.Show<ConfirmationDialog>("Delete Report", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            foreach (var reportText in report.ReportTexts)
+            {
+                //await _dbReports.DeleteReport(reportText);
+            }
+            ReportedUsersList.Remove(report);
+            StateHasChanged(); 
+        }
+    }
+
+    public class ReportedUserModel
+    {
+        public UsersModel User { get; set; }
+        public List<string> ReportTexts { get; set; }
+        public List<string> ReportReason { get; set; } 
+    }
+}

@@ -1,0 +1,275 @@
+﻿@page "/Friends"
+@using MudBlazor
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Model.Database_Models
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using System.Net.Http.Json
+@inject HttpClient httpClient
+@inject IRolesData _dbRoles
+@inject IDialogService DialogService
+@inject IUsersData _dbUsers
+@inject IFriendsData _dbFriends
+
+@attribute [Authorize]
+
+
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+        <RadzenStack style="margin-bottom: 50px;">
+            <MudText Typo="Typo.h2" Align="Align.Center">Friends List</MudText>
+            <MudAutocomplete SearchFunc="@SearchUser"
+                             T="UsersModel" @bind-Value="selectedUser"
+                             Placeholder="Search for other users..."
+                             Dense="true"
+                             ResetValueOnEmptyText="true"
+                             ToStringFunc="@(i => ItemDisplay(i))" />
+            <RadzenRow>
+                <RadzenColumn>
+                    <RadzenButton Click=@(args => SendRequest(@selectedUser)) Text="Send Friend Request" ButtonStyle="ButtonStyle.Primary" />
+                </RadzenColumn>
+            </RadzenRow>
+        </RadzenStack>
+
+
+        @foreach (var row in friends)
+        {
+            <RadzenRow>
+                <RadzenColumn>
+                    @row.Name
+                </RadzenColumn>
+                <RadzenColumn>
+                    @row.Status
+                </RadzenColumn>
+                <RadzenColumn>
+                    <RadzenButton Click=@(args => OnClick("Invite Sent")) Text="Invite to Group" ButtonStyle="ButtonStyle.Primary" />
+                </RadzenColumn>
+                <RadzenColumn>
+                    <RadzenButton Click=@(args => RemoveFriend(row, "Friend Removed")) Text="Remove Friend" ButtonStyle="ButtonStyle.Danger" />
+                </RadzenColumn>
+            </RadzenRow>
+        }
+    </RadzenCard>
+</RadzenStack>
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+        <RadzenStack>
+            <MudText Typo="Typo.h2" Align="Align.Center">Incoming Friend Requests</MudText>
+        </RadzenStack>
+        @foreach (var row in requests)
+        {
+            <RadzenRow>
+                <RadzenColumn>
+                    @row.Name
+                </RadzenColumn>
+                <RadzenColumn>
+                    @row.Status
+                </RadzenColumn>
+                <RadzenColumn>
+                    <RadzenButton Click=@(args => AcceptFriendRequest(row)) Text="Accept" ButtonStyle="ButtonStyle.Primary" />
+                </RadzenColumn>
+                <RadzenColumn>
+                    <RadzenButton Click=@(args => DeclineFriendRequest(row)) Text="Decline" ButtonStyle="ButtonStyle.Danger" />
+                </RadzenColumn>
+            </RadzenRow>
+        }
+    </RadzenCard>
+</RadzenStack>
+
+@code {
+    private void OnClick(string message)
+    {
+        NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = message });
+    }
+    private void OnClick2(string message)
+    {
+        NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = message });
+    }
+    private Friend Find(List<Friend> flist, int u2)
+    {
+        foreach (Friend f in flist)
+        {
+            if (f.ID1 == u2 || f.ID2 == u2)
+            {
+                return f;
+            }
+        }
+        return null;
+    }
+    private void SendRequest(UsersModel u)
+    {
+        if (u != null)
+        {
+            if (u.UserId == ID)
+            {
+                NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Can Not Friend Yourself" });
+            }
+            else if (Find(friends, u.UserId) != null)
+            {
+                NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "User Already Friended" });
+            }
+            else if (Find(outgoingRequests, u.UserId) != null)
+            {
+                NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Friend Request Already Sent" });
+            }
+            else if (Find(requests, u.UserId) != null)
+            {
+                AcceptFriendRequest(Find(requests, u.UserId));
+            }
+            else
+            {
+                _dbFriends.AddFriend(new FriendsModel { UserId1 = ID, UserId2 = u.UserId, CreatedDate = DateTime.Now, Status = "pending" });
+                outgoingRequests.Add(new Friend { FriendId = -1, ID1 = ID, ID2 = u.UserId, Name = u.FirstName + " " + u.LastName, Status = "Recently Online" });
+                NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = "Friend Request Sent to " + u.FirstName + " " + u.LastName});
+            }
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "No User Selected" });
+        }
+    }
+    private void RemoveFriend(Friend f, string message)
+    {
+        _dbFriends.DeleteFriend(f.FriendId);
+        friends.Remove(f);
+        NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = message });
+    }
+    private void AcceptFriendRequest(Friend f)
+    {
+        _dbFriends.UpdateFriend(new FriendsModel { FriendshipId = f.FriendId, UserId1 = f.ID1, UserId2 = f.ID2, CreatedDate = DateTime.Now, Status = "accepted" });
+        friends.Add(f);
+        requests.Remove(f);
+    }
+    private void DeclineFriendRequest(Friend f)
+    {
+        _dbFriends.UpdateFriend(new FriendsModel { FriendshipId = f.FriendId, UserId1 = f.ID1, UserId2 = f.ID2, CreatedDate = DateTime.Now, Status = "rejected" });
+        requests.Remove(f);
+    }
+    private void UpdateRejects(List<Friend> rejects)
+    {
+        foreach (Friend f in rejects)
+        {
+            Console.WriteLine(f.Status);
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Rejected Friend Request from " + f.Name, Duration = 10000 });
+            _dbFriends.DeleteFriend(f.FriendId);
+        }
+    }
+    private int ID = 0;
+    private string userName = "Not Found";
+    List<UsersModel> UserList = null;
+    List<FriendsModel> FriendList = new();
+    private List<Friend> friends;
+    private List<Friend> requests;
+    private List<Friend> outgoingRequests;
+    private List<Friend> rejectedRequests;
+    UsersModel InputModel = null;
+
+    // Code for searching other users
+    private UsersModel selectedUser = null;
+    private string _searchString = "";
+    private List<UsersModel> AccountList = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            userName = "Not found";
+        }
+        UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            InputModel = UserList.First();
+            ID = InputModel.UserId;
+        }
+
+        FriendList = await _dbFriends.GetFriends(ID);
+        friends = new List<Friend> { };
+        requests = new List<Friend> { };
+        outgoingRequests = new List<Friend> { };
+        rejectedRequests = new List<Friend> { };
+        foreach (FriendsModel dataFriend in FriendList)
+        {
+            List<UsersModel> temp = null;
+
+            if (dataFriend.UserId1 == ID)
+            {
+                temp = await _dbUsers.GetUser(dataFriend.UserId2);
+            }
+            else
+            {
+                temp = await _dbUsers.GetUser(dataFriend.UserId1);
+            }
+
+            if (dataFriend.Status.Equals("accepted"))
+            {
+                friends.Add(new Friend() { FriendId = dataFriend.FriendshipId, ID1 = dataFriend.UserId1, ID2 = dataFriend.UserId2, Name = temp.First().FirstName + " " + temp.First().LastName, Status = "Recently Online" });
+            }
+            else if (dataFriend.UserId1 != ID && dataFriend.Status.Equals("pending"))
+            {
+                requests.Add(new Friend() { FriendId = dataFriend.FriendshipId, ID1 = dataFriend.UserId1, ID2 = dataFriend.UserId2, Name = temp.First().FirstName + " " + temp.First().LastName, Status = "Recently Online" });
+            }
+            else if (dataFriend.UserId1 == ID && dataFriend.Status.Equals("pending"))
+            {
+                outgoingRequests.Add(new Friend() { FriendId = dataFriend.FriendshipId, ID1 = dataFriend.UserId1, ID2 = dataFriend.UserId2, Name = temp.First().FirstName + " " + temp.First().LastName, Status = "Recently Online" });
+            }
+            else if (dataFriend.UserId1 == ID && dataFriend.Status.Equals("rejected"))
+            {
+                rejectedRequests.Add(new Friend() { FriendId = dataFriend.FriendshipId, ID1 = dataFriend.UserId1, ID2 = dataFriend.UserId2, Name = temp.First().FirstName + " " + temp.First().LastName, Status = "Recently Online" });
+            }
+        }
+
+        AccountList = await _dbUsers.GetAllUser();
+
+    }
+    override protected async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            UpdateRejects(rejectedRequests);
+        }
+    }
+
+    public class Friend
+    {
+        public int FriendId { get; set; }
+        public int ID1 { get; set; }
+        public int ID2 { get; set; }
+        public string? Name { get; set; }
+        public string? Status { get; set; }
+    }
+
+    private async Task<IEnumerable<UsersModel>> SearchUser(string value)
+    {
+        await Task.Delay(5);
+
+        if (string.IsNullOrEmpty(value))
+            return Enumerable.Empty<UsersModel>();
+
+        return AccountList
+            .Where(a => (a.FirstName + " " + a.LastName).Contains(value, StringComparison.InvariantCultureIgnoreCase));
+    }
+
+    private string ItemDisplay(UsersModel m)
+    {
+        if (m == null)
+        {
+            return "";
+        }
+        return m.FirstName + " " + m.LastName;
+    }
+}

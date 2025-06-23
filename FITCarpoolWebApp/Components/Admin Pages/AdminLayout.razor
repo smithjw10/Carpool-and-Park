@@ -1,0 +1,91 @@
+﻿@inherits LayoutComponentBase
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject TooltipService tooltipService
+@using Microsoft.AspNetCore.Components.Authorization
+@using Radzen.Blazor
+@using MudBlazor
+<MudThemeProvider />
+<MudDialogProvider FullWidth="true"
+                   MaxWidth="MaxWidth.Medium"
+                   CloseButton="true"
+                   DisableBackdropClick="true"
+                   NoHeader="true"
+                   Position="MudBlazor.DialogPosition.Center"
+                   CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+<RadzenDialog />
+<RadzenNotification />
+@using Microsoft.AspNetCore.Authorization
+<AuthorizeView Roles="Admin">
+    <Authorized>
+        <RadzenLayout>
+            <RadzenHeader>
+                <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" Gap="0">
+                    <RadzenSidebarToggle Click="@(() => sidebarExpanded = !sidebarExpanded)" />
+                    <RadzenLabel Text="FIT Carpool Group Finder" />
+                    <MudSpacer></MudSpacer>
+                    <MudIconButton Href="/" Icon="@Icons.Material.Filled.Home"></MudIconButton>
+
+                </RadzenStack>
+            </RadzenHeader>
+            <RadzenSidebar Responsive="false" Style="width: max-content; position: absolute">
+                <RadzenPanelMenu DisplayStyle="@(sidebarExpanded ? MenuItemDisplayStyle.IconAndText : MenuItemDisplayStyle.Icon)" ShowArrow="false">
+                    @*Need two because of overlap issues*@
+                    <RadzenPanelMenuItem Text="Home" Path="/Admin" Icon="home" />
+                    <RadzenPanelMenuItem Text="Home" Path="/Admin" Icon="home" />
+                    <RadzenPanelMenuItem Text="User Admin" Path="/Admin/Users Management" Icon="account_circle" />
+                    <RadzenPanelMenuItem Text="Roles Admin" Path="/Admin/Roles Management" Icon="work" />
+                    <RadzenPanelMenuItem Text="Carpool Groups Admin" Path="/Admin/CarpoolGroups Management" Icon="group" />
+                    <RadzenPanelMenuItem Text="Reviews/Ratings Admin" Path="/Admin/Reviews Management" Icon="comment" />
+                    <RadzenPanelMenuItem Text="Reports Admin" Path="/Admin/Reports Management" Icon="report" />
+
+
+                </RadzenPanelMenu>
+            </RadzenSidebar>
+            <RadzenBody>
+                <div class="rz-p-4" style="margin-left:5vh; margin-right:5vh" >
+                    @Body
+                </div>
+            </RadzenBody>
+            <RadzenFooter>
+                <div class="rz-p-4" style="margin-left:5vh; margin-right:5vh">
+                    This site is currently under construction by Austin Phillips, Hunter Smith, Jason Smith and Jacqueline Torres.
+                </div>
+            </RadzenFooter>
+        </RadzenLayout>
+    </Authorized>
+    <NotAuthorized>
+        <MudText>Not Authorized to view admin pages</MudText>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    bool sidebarExpanded = false;
+    private string? currentUrl;
+    void ShowTooltip(ElementReference elementReference, TooltipOptions options = null) => tooltipService.Open(elementReference, "Some content", options);
+
+    // Runs on the page intialization, to get current user page and keep track of where they navigate to
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+    // Used to keep track of the current user page
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+    // Method to
+    private async Task InvokeLogout()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('logoutForm').submit();");
+
+    }
+    private void NavigateTo(string page)
+    {
+        NavigationManager.NavigateTo($"/{page}");
+    }
+}

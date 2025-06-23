@@ -1,0 +1,401 @@
+﻿@page "/Driver/{TripID:int}"
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Logic_Models
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject Radzen.DialogService DialogService
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject IGroupMemberLocationsData _dbLocation
+@inject IGMapsAPI _GmapKey
+@inject IJSRuntime JSRuntime
+@inject ICarpoolGroupsData _dbGroups
+@inject IGroupRecommendationData _dbGroupRec
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+@implements IDisposable
+@attribute [Authorize]
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+        <RadzenStack>
+            @if (CurrentTrip == null)
+            {
+                <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H5" class="rz-color-primary">Error Occured! Trip was null or you are not a driver :(</RadzenText>
+            } else if(CurrentTrip.DriverID != CurrentUser.UserId)
+            {
+                <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H5" class="rz-color-primary">Error Occured! Trip was null or you are not a driver :(</RadzenText>
+
+            }
+            else if (CurrentTrip.Status.Equals("Not Started"))
+            {
+                <button class="btn btn-primary" @onclick="StartTrip">Start Trip</button>
+                <p class="text-danger mt-2">
+                    Note: Clicking "Start Trip" will prevent pending users from joining this trip.
+                </p>
+
+                <hr />
+
+                <h4>Confirmed Users</h4>
+                @if (CurrentTrip.ConfirmedUsers.Any())
+                {
+                    <ul>
+                        @foreach (var user in CurrentTrip.ConfirmedUsers)
+                        {
+                            <li>
+                                <strong>@user.FirstName @user.LastName</strong> - Pickup: @user.PickupLocation, Dropoff: @user.DropoffLocation
+                                <br />
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>No confirmed users yet.</p>
+                }
+
+                <h4>Pending Users</h4>
+                @if (CurrentTrip.PendingUsers.Any())
+                {
+                    <ul>
+                        @foreach (var user in CurrentTrip.PendingUsers)
+                        {
+                            <li>
+                                <strong>@user.FirstName @user.LastName</strong> - Pickup: @user.PickupLocation, Dropoff: @user.DropoffLocation
+                                <br />
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>No pending users yet.</p>
+                }
+
+                <h4>Declined Users</h4>
+                @if (CurrentTrip.DeclinedUsers.Any())
+                {
+                    <ul>
+                        @foreach (var user in CurrentTrip.DeclinedUsers)
+                        {
+                            <li>
+                                <strong>@user.FirstName @user.LastName</strong> - Pickup: @user.PickupLocation, Dropoff: @user.DropoffLocation
+                                <br />
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>No declined users yet.</p>
+                }
+
+            }
+            else if (CurrentTrip.Status.Equals("In Progress"))
+            {
+                @if (!locationAvailable)
+                {
+                    <RadzenText TextStyle="TextStyle.Body1" TagName="TagName.H5" class="rz-color-primary">Please click below to allow location services. This will allow your group to see your location</RadzenText>
+                    // A button that prompts the user for their location to start the and is labeled Start Trip
+                    <MudButton OnClick="@GetUserLocation" Style="margin-top: 20px;">Prompt for User Location</MudButton>
+
+                } else
+                {
+                    <div>
+
+                        <MudButton OnClick="@GenerateDirections" Style="margin-top: 20px;">Generate Directions</MudButton>
+                        <MudButton OnClick="@EndRoute" Style="margin-top: 20px;">End Route</MudButton>
+
+                    </div>
+                }
+                <hr />
+
+                <h4>Confirmed Users</h4>
+                @if (CurrentTrip.ConfirmedUsers.Any())
+                {
+                    <ul>
+                        @foreach (var user in CurrentTrip.ConfirmedUsers)
+                        {
+                            <li>
+                                <strong>@user.FirstName @user.LastName</strong> - Pickup: @user.PickupLocation, Dropoff: @user.DropoffLocation
+                                <br />
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>No confirmed users.</p>
+                }
+            }
+            <a href="https://play.google.com/store/apps/details?id=com.cutcom.apparmor.floridatech&pli=1" target="_blank">
+                <MudImage Src="https://www.fit.edu/media/site-specific/wwwfitedu/marketing-amp-comm/images/florida-tech-safe.JPG"
+                          Alt="Profile"
+                          Style="width: 100px; height: 100px; cursor: pointer;" />
+            </a>
+            <MudText Typo="Typo.h5">
+                Consider downloading Fl Tech Safe App for safety features!
+            </MudText>
+        </RadzenStack>
+    </RadzenCard>
+</RadzenStack>
+
+@code {
+    [Parameter]
+    public int TripID { get; set; }
+    public TripModel CurrentTrip { get; set; }
+    List<CarpoolGroupsModel> GroupList = new();
+    GroupMemberLocationsModel DriverLocation = new();
+    List<GroupMembersModel> GroupMembersList = new();
+    CarpoolGroupsModel CurrentGroup = new();
+    private string? MapApi = null;
+    UsersModel CurrentUser = new();
+    private string userName = "Not found";
+    string overallFinishTime = "6:00 PM";
+    bool carpoolInProgress = false;
+    bool allowVirtualization = true;
+    private bool IsTripStarted = false;
+    private Location userLocation = new Location();
+    private bool locationAvailable = false;
+    private int LocationRefreshRate = 10;
+    private System.Threading.Timer? locationRefreshTimer;
+    protected override async Task OnInitializedAsync()
+    {
+        // Retrive the google maps api key
+        MapApi = _GmapKey.MapAPI;
+        // Get user profile information
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            userName = user.Identity.Name;
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/", forceLoad: true);
+        }
+        List<UsersModel> UserList = await _dbUsers.GetUser(userName);
+        if (UserList.Any())
+        {
+            CurrentUser = UserList.First();
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/", forceLoad: true);
+        }
+        // Get the details for the Trip given the TripID param
+        await GetTrip();
+
+    }
+    public async Task GetTrip()
+    {
+        CurrentTrip = await _dbGroupRec.GetTripWithMems(TripID);
+        CurrentTrip.ConfirmedUsers = CurrentTrip.ConfirmedUsers.Where(e => e.UserID != CurrentUser.UserId).ToList();
+
+    }
+    private async Task StartTrip()
+    {
+        // Logic to start the trip and prevent pending users from joining
+        await _dbGroupRec.StartTrip(CurrentTrip.ID);
+        await GetTrip();
+        StateHasChanged();
+    }
+    List<string> pickupAddresses = new List<string>
+    {
+        "123 Main St, City, State, Zip",
+        "456 Elm St, City, State, Zip",
+        "789 Oak St, City, State, Zip"
+    };
+    private async Task GetUserLocation()
+    {
+        if (locationAvailable)
+        {
+            await JSRuntime.InvokeVoidAsync("requestUserLocation", DotNetObjectReference.Create(this));
+        }
+        else
+        {
+            locationAvailable = await JSRuntime.InvokeAsync<bool>("confirm", "Allow this site to access your location, please exit page if you don't want to allow?");
+            OnRefreshRateChanged(LocationRefreshRate);
+            await GetUserLocation();
+        }
+    }
+    private async Task EndRoute()
+    {
+        await _dbGroupRec.EndTrip(CurrentTrip.ID);
+        NavigationManager.NavigateTo("/", forceLoad: true);
+    }
+    [JSInvokable]
+    public async void HandleSuccess(double latitude, double longitude)
+    {
+        userLocation.Latitude = latitude;
+        userLocation.Longitude = longitude;
+        DateTime currentTime = DateTime.Now;
+        Console.WriteLine($"Updated Location - Latitude: {latitude}, Longitude: {longitude}, Time: {currentTime.ToString("HH:mm:ss")}");
+        // Carpool is not started yet, meaning no entry in the database was created
+        Console.WriteLine("Update Called " + DriverLocation.LocationId);
+        List<GroupMemberLocationsModel> DriverLocationList = await _dbLocation.GetGroupMemberLocation(TripID);
+        carpoolInProgress = DriverLocationList.Any();
+        
+        if (!carpoolInProgress)
+        {
+            Console.WriteLine("New entry Called " + DriverLocation.LocationId);
+
+            //GroupMemberLocationsModel(int locationId, int userId, int groupId, double latitude, double longitude, DateTime timestamp)
+            DriverLocation = new GroupMemberLocationsModel(CurrentUser.UserId, CurrentTrip.ID, latitude, longitude, currentTime);
+            await _dbLocation.AddGroupMemberLocation(DriverLocation);
+            DriverLocationList = await _dbLocation.GetGroupMemberLocation(TripID);
+            DriverLocation = DriverLocationList.FirstOrDefault();
+            carpoolInProgress = true;
+
+        }
+        else
+        {
+            DriverLocation = DriverLocationList.FirstOrDefault();
+            Console.WriteLine("Updating DB " + DriverLocation.LocationId);
+            DriverLocation.Latitude = latitude;
+            DriverLocation.Longitude = longitude;
+            DriverLocation.Timestamp = currentTime;
+            await _dbLocation.UpdateGroupMemberLocation(DriverLocation);
+        }
+        // Need to create call to either add or update user location in database
+        InvokeAsync(StateHasChanged); // Ensure UI is updated with new location
+    }
+
+    [JSInvokable]
+    public void HandleError(string error)
+    {
+        Console.WriteLine($"Error getting location: {error}");
+        // Handle error here
+    }
+
+    private class Location
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+    private string GetETA(string address)
+    {
+
+        Random rnd = new Random();
+        int minutes = rnd.Next(15, 31);
+        return DateTime.Now.AddMinutes(minutes).ToString("h:mm tt");
+    }
+
+    private void GenerateDirections()
+    {
+        string googleMapsBaseUrl = "https://www.google.com/maps/dir/?api=1";
+
+        // Determine the origin and destination based on trip direction
+        string origin, destination;
+        List<string> waypoints = new();
+
+        if (CurrentTrip.Direction.Equals("arrival", StringComparison.OrdinalIgnoreCase))
+        {
+            // For arrival, stops should end at campus
+            destination = "destination=150 W University Blvd, Melbourne, FL 32901"; // Campus address
+            origin = $"origin={userLocation.Latitude},{userLocation.Longitude}";
+
+            // Add all confirmed user pickup locations as waypoints
+            waypoints = CurrentTrip.ConfirmedUsers
+                .Where(u => u.PickupLatitude != 0 && u.PickupLongitude != 0 && u.UserID != CurrentUser.UserId)
+                .OrderBy(u => GetDistance(userLocation.Latitude, userLocation.Longitude, u.PickupLatitude, u.PickupLongitude)) // Order stops efficiently
+                .Select(u => $"{u.PickupLatitude},{u.PickupLongitude}")
+                .ToList();
+        }
+        else if (CurrentTrip.Direction.Equals("departure", StringComparison.OrdinalIgnoreCase))
+        {
+            // For departure, start at campus and end at the furthest user
+            origin = "origin=150 W University Blvd, Melbourne, FL 32901"; // Campus address
+
+            // Add all confirmed user drop-off locations as waypoints
+            var dropoffWaypoints = CurrentTrip.ConfirmedUsers
+                .Where(u => u.DropoffLatitude != 0 && u.DropoffLongitude != 0)
+                .OrderByDescending(u => GetDistance(userLocation.Latitude, userLocation.Longitude, u.DropoffLatitude, u.DropoffLongitude)) // Order efficiently for furthest stop
+                .Select(u => $"{u.DropoffLatitude},{u.DropoffLongitude}")
+                .ToList();
+
+            if (dropoffWaypoints.Any())
+            {
+                destination = $"destination={dropoffWaypoints.Last()}"; // Set the furthest user's drop-off as the last destination
+                dropoffWaypoints.RemoveAt(dropoffWaypoints.Count - 1); // Remove the last destination from waypoints
+                waypoints = dropoffWaypoints;
+            }
+            else
+            {
+                destination = "destination=150 W University Blvd, Melbourne, FL 32901"; // Fallback to campus
+            }
+        }
+        else
+        {
+            Console.WriteLine("Unknown trip direction.");
+            return;
+        }
+
+        // Construct the waypoints parameter
+        string waypointsParam = waypoints.Any() ? $"&waypoints={string.Join("|", waypoints)}" : string.Empty;
+
+        // Build the complete Google Maps URL
+        string googleMapsUrl = $"{googleMapsBaseUrl}&{origin}&{destination}{waypointsParam}&travelmode=driving";
+
+        // Open the URL in a new tab
+        JSRuntime.InvokeVoidAsync("open", googleMapsUrl, "_blank");
+    }
+
+    // Helper function to calculate the distance between two coordinates
+    private double GetDistance(double lat1, double lon1, double lat2, double lon2)
+    {
+        double R = 6371e3; // Earth's radius in meters
+        double phi1 = lat1 * Math.PI / 180;
+        double phi2 = lat2 * Math.PI / 180;
+        double deltaPhi = (lat2 - lat1) * Math.PI / 180;
+        double deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+        double a = Math.Sin(deltaPhi / 2) * Math.Sin(deltaPhi / 2) +
+                   Math.Cos(phi1) * Math.Cos(phi2) *
+                   Math.Sin(deltaLambda / 2) * Math.Sin(deltaLambda / 2);
+        double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        return R * c; // Distance in meters
+    }
+    private void OnRefreshRateChanged(int value)
+    {
+        LocationRefreshRate = value;
+        // Convert refresh rate from seconds to milliseconds
+        int period = LocationRefreshRate * 1000;
+
+        if (locationRefreshTimer != null)
+        {
+            locationRefreshTimer.Change(0, period);
+        }
+        else
+        {
+            locationRefreshTimer = new System.Threading.Timer(async _ =>
+            {
+                await InvokeAsync(() =>
+                {
+                    GetUserLocation();
+                });
+            }, null, 0, period);
+        }
+    }
+    public void Dispose()
+    {
+        locationRefreshTimer?.Dispose();
+    }
+    private void NavigateTo(string url)
+    {
+        NavigationManager.NavigateTo(url, true);
+    }
+
+}

@@ -1,0 +1,20 @@
+﻿<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.h6">@ContentText</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@Close" Color="Color.Primary">Cancel</MudButton>
+        <MudButton OnClick="@Confirm" Color="@Color">@(ButtonText ?? "Confirm")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+    @code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public string ContentText { get; set; }
+    [Parameter] public string ButtonText { get; set; }
+    [Parameter] public Color Color { get; set; } = MudBlazor.Color.Primary;
+    void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+
+    void Close() => MudDialog.Cancel();
+}

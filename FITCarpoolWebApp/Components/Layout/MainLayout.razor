@@ -1,0 +1,194 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject TooltipService tooltipService
+
+@using DataAccessLibrary.Model
+@using Microsoft.AspNetCore.Components.Authorization
+@using Radzen.Blazor
+@using System.Threading
+
+
+<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<RadzenDialog />
+<RadzenNotification />
+
+
+<MudLayout>
+
+    <MudAppBar Color="Color.Primary" Elevation="1">
+
+
+        <MudButton Variant="MudBlazor.Variant.Text" Color="Color.Inherit" OnClick="@(() => NavigationManager.NavigateTo("/"))" Style="text-transform: none;">
+            <MudText Typo="Typo.h6" Color="Color.Inherit">FIT Carpool Group Finder</MudText>
+        </MudButton>
+
+        <!-- For Admin only -->
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <MudIconButton Href="/Admin" Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Inherit" Style="margin-right: 10px;" />
+            </Authorized>
+        </AuthorizeView>
+        <MudSpacer />
+
+        <!-- For authorized users only -->
+        <AuthorizeView>
+            <Authorized>
+
+                <MudBreakpointProvider>
+                    <MudHidden Breakpoint="Breakpoint.Xs">
+                        <MudItem Style="padding: 15px;">
+                            <MudAutocomplete T="string" Variant="MudBlazor.Variant.Outlined" Margin="Margin.Dense"
+                                             @bind-Value="selectedPage" SearchFunc="SearchPages" Placeholder="Search..."
+                                             Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Inherit"
+                                             OnBlur="@(e => OnPageSelected(selectedPage))" />
+                        </MudItem>
+                    </MudHidden>
+                </MudBreakpointProvider>
+
+                <MudIconButton Icon="@Icons.Material.Filled.Inbox" Title="Inbox" Color="Color.Inherit" Style="margin-right: 10px;" />
+
+                <!-- Profile pic -->
+                <MudAvatar>
+                    @if (InputModel.ProfilePicture == null)
+                    {
+                        <MudImage Src="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token"
+                                  Click="@(() => NavigateTo("Profile"))" Alt="Profile" Style="width: 40px; height: 40px; cursor: pointer;" />
+                    }
+                    else
+                    {
+                        <MudImage Src="@($"data:image/jpeg;base64,{Convert.ToBase64String(InputModel.ProfilePicture)}")"
+                                  Click="@(() => NavigateTo("Profile"))" Alt="binary image" Style="width: 40px; height: 40px; border-radius: 50%; cursor: pointer;" />
+                    }
+                </MudAvatar>
+
+                <!-- Dropdown Menu -->
+                <MudMenu Icon="@Icons.Material.Filled.ArrowDropDown" Color="Color.Inherit" TransformOrigin="Origin.TopRight">
+                    @foreach (var pageItem in pages)
+                    {
+                        <MudMenuItem OnClick="@(() => NavigateToPage(pageItem.Route))">
+                            <MudIcon Icon="@pageItem.Icon" Style="margin-right: 8px;" /> @pageItem.DisplayName
+                        </MudMenuItem>
+                    }
+
+                    <MudMenuItem OnClick="InvokeLogout">
+                        <MudIcon Icon="@Icons.Material.Filled.Logout" Style="margin-right: 8px;" /> Logout
+                    </MudMenuItem>
+                </MudMenu>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+	<!-- For mobile -->
+    <MudDrawer @bind-Open="_drawerOpen" Anchor="Anchor.Left" Elevation="1" Variant="DrawerVariant.Responsive">
+        <MudList>
+            @foreach (var pageItem in pages)
+            {
+                <MudMenuItem OnClick="@(() => NavigateToPage(pageItem.Route))">
+                    <MudIcon Icon="@pageItem.Icon" Style="margin-right: 8px;" /> @pageItem.DisplayName
+                </MudMenuItem>
+            }
+            <MudListItem OnClick="InvokeLogout" Color="Color.Error">
+                <MudIcon Icon="@Icons.Material.Filled.Logout" Style="margin-right: 8px;" /> Logout
+            </MudListItem>
+        </MudList>
+    </MudDrawer>
+
+    <MudMainContent>
+        <div class="rz-p-4">
+            @Body
+        </div>
+    </MudMainContent>
+
+    <footer style="flex: 0 1 40px;">
+        <div>
+            This site is currently under construction by Austin Phillips, Hunter Smith, Jason Smith, and Jacqueline Torres.
+        </div>
+    </footer>
+</MudLayout>
+
+<form id="logoutForm" method="post" action="Account/Logout" style="display:none">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="@currentUrl" />
+</form>
+
+@code {
+    private bool _drawerOpen = false;
+    private string? currentUrl;
+
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+
+    private async Task InvokeLogout()
+    {
+        Console.WriteLine("Logout button clicked");
+        await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('logoutForm').submit();");
+    }
+
+    private string selectedPage;
+
+    // List of page names and their routes
+    private List<(string DisplayName, string Route, string Icon)> pages = new()
+    {
+        ("Home", "/", Icons.Material.Filled.Home),
+        ("Profile", "/Profile", Icons.Material.Filled.AccountCircle),
+        ("Preferences", "/Preferences", Icons.Material.Filled.PsychologyAlt),
+        ("Rider", "/Rider", Icons.Material.Filled.LocalTaxi),
+        ("Driver", "/Driver", Icons.Material.Filled.DirectionsCarFilled),
+        ("Group-Interface", "/Group-Interface", Icons.Material.Filled.Workspaces),
+        ("Group-Find", "/Group-Find", Icons.Material.Filled.GroupWork),
+        ("After-Trip", "/After-Trip", Icons.Material.Filled.NoCrash),
+        ("Friends", "/Friends",Icons.Material.Filled.SupervisedUserCircle),
+        ("Directions", "/Directions", Icons.Material.Filled.Directions),
+        ("User-Details", "/User-Details", Icons.Material.Filled.AccountBox),
+        ("Settings", "/Account/Manage", Icons.Material.Filled.ManageAccounts),
+    };
+
+    // Search function to filter available pages based on input
+    private Task<IEnumerable<string>> SearchPages(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult(pages.Select(x => x.DisplayName).AsEnumerable());
+
+        return Task.FromResult(pages
+            .Where(x => x.DisplayName.Contains(value, StringComparison.InvariantCultureIgnoreCase))
+            .Select(x => x.DisplayName)
+            .AsEnumerable());
+    }
+
+    private void OnPageSelected(string selected)
+    {
+        var selectedRoute = pages.FirstOrDefault(p => p.DisplayName == selected).Route;
+        if (!string.IsNullOrEmpty(selectedRoute))
+        {
+            NavigationManager.NavigateTo(selectedRoute);
+        }
+    }
+
+    private void NavigateToPage(string route)
+    {
+        NavigationManager.NavigateTo(route);
+    }
+
+    UsersModel InputModel = new();
+
+    private void NavigateTo(string page)
+    {
+        NavigationManager.NavigateTo($"/{page}");
+    }
+}
+
+
+

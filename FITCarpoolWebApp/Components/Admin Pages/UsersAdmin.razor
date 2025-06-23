@@ -1,0 +1,91 @@
+﻿@page "/Admin/Users Management"
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@layout AdminLayout
+@using System.Net.Http.Json
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject IDialogService DialogService
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+    <MudDataGrid T="UsersModel" Items="UserList" Bordered="true" Dense="true" ReadOnly="false" EditMode="MudBlazor.DataGridEditMode.Form"
+                 StartedEditingItem="@StartedEditingUser" CanceledEditingItem="@CanceledEditingUser" CommittedItemChanges="@CommittedUserChanges" EditTrigger="DataGridEditTrigger.Manual">
+        <Columns>
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteUser(context.Item))" />
+                    <MudIconButton Size="@Size.Small" Icon="@Icons.Material.Outlined.Edit" OnClick="@context.Actions.StartEditingItemAsync" />
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.UserId" Title="User ID" IsEditable="false" />
+            <PropertyColumn Property="x => x.Email" Title="Email" />
+            <TemplateColumn Title="Name">
+                <CellTemplate>
+                    @{
+                        var user = context.Item as UsersModel;
+                        <div>@($"{user.FirstName} {user.LastName}")</div>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.Phone" Title="Phone" />
+            <PropertyColumn Property="x => x.UserType" Title="User Type" />
+            <PropertyColumn Property="x => x.UserLocation" Title="Location" />
+            <PropertyColumn Property="x => x.PickupLocation" Title="Pickup Location" />
+            <PropertyColumn Property="x => x.DropoffLocation" Title="Dropoff Location" />
+            <PropertyColumn Property="x => x.DrivingDistance" Title="Driving Distance" />
+            <PropertyColumn Property="x => x.PhonePrivacy" Title="Phone Privacy" />
+            <PropertyColumn Property="x => x.Gender" Title="Gender" />
+            <PropertyColumn Property="x => x.AddressPrivacy" Title="Address Privacy" />
+            <PropertyColumn Property="x => x.BeltCount" Title="Belt Count" />
+            <PropertyColumn Property="x => x.MakeModel" Title="Make & Model" />
+            <PropertyColumn Property="x => x.VehicleColor" Title="Vehicle Color" />
+            <PropertyColumn Property="x => x.LicensePlate" Title="License Plate" />
+            <PropertyColumn Property="x => x.AllowEatDrink" Title="Allow Eating/Drinking" />
+            <PropertyColumn Property="x => x.AllowSmokeVape" Title="Allow Smoking/Vaping" />
+            <PropertyColumn Property="x => x.Rating" Title="Rating" />
+
+        </Columns>
+    </MudDataGrid>
+</RadzenCard>
+
+@code {
+    private List<UsersModel> UserList = new();
+    protected override async Task OnInitializedAsync()
+    {
+        UserList = await _dbUsers.GetAllUser();
+    }
+
+    void StartedEditingUser(UsersModel user) { }
+
+    void CanceledEditingUser(UsersModel user) { }
+
+    async Task CommittedUserChanges(UsersModel user)
+    {
+        await _dbUsers.UpdateUser(user);
+        UserList = await _dbUsers.GetAllUser();
+    }
+
+    async Task DeleteUser(UsersModel user)
+    {
+        var parameters = new DialogParameters
+            {
+                ["ContentText"] = $"Are you sure you want to delete {user.FirstName} {user.LastName}?",
+                ["ButtonText"] = "Delete",
+                ["Color"] = Color.Error
+            };
+        var dialog = DialogService.Show<ConfirmationDialog>("Delete User", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            await _dbUsers.DeleteUser(user.UserId);
+            await _dbUsers.DeleteAccount(user.Email); // Assuming this deletes the account from a different table
+            UserList.Remove(user);
+            StateHasChanged(); // Refresh the UI
+        }
+    }
+}

@@ -1,0 +1,328 @@
+﻿@page "/After-Trip/{TripID:int}"
+@using Radzen.Blazor
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@using Microsoft.AspNetCore.Authorization
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@inject NotificationService NotificationService
+@inject Radzen.DialogService DialogService
+@inject IUsersData _dbUsers
+@inject IRatingsData _dbRatings
+@inject IReportsData _dbReports
+@inject IReviewsData _dbReviews
+@inject IGroupMembersData _dbGroupMembers
+@using DataAccessLibrary.Data.API
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Logic_Models
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FITCarpoolWebApp.Data
+@inject Radzen.DialogService DialogService
+@inject HttpClient httpClient
+@inject IUsersData _dbUsers
+@inject IGroupMemberLocationsData _dbLocation
+@inject IGMapsAPI _GmapKey
+@inject IJSRuntime JSRuntime
+@inject ICarpoolGroupsData _dbGroups
+@inject IGroupRecommendationData _dbGroupRec
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+@attribute [Authorize]
+
+<RadzenStack>
+    <RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%;">
+        <RadzenHeading Size="H2" Text="Review Your Trip" Style="text-align: center; margin-bottom: 20px;" />
+
+        @if (CurrentTrip != null && GroupMembers != null)
+        {
+            <RadzenDataGrid Data="@GroupMembers" TItem="UsersModel" AllowSorting="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UsersModel" Width="90px">
+                        <Template Context="user">
+                            @if (user.ProfilePicture != null)
+                            {
+                                <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(user.ProfilePicture)}")" alt="Profile Picture" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                            }
+                            else
+                            {
+                                <img src="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" alt="Default Profile" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover;" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UsersModel" Title="Name" Width="140px">
+                        <Template Context="user">
+                            @user.FirstName @user.LastName
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UsersModel" Context="user" Width="165px">
+                        <Template>
+                            <RadzenButton Text="View User" Click="@(() => ViewUser(user.Email))" Style="width: 100%; background-color: #D3D3D3; color: #333;" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UsersModel" Title="Rating" Width="200px">
+                        <Template Context="user">
+                            <RadzenRating Value="@GetUserRating(user.UserId)" Max="5" Change="@(args => StoreRating(args, user.UserId))" Style="margin-right: 10px;" />
+                            <MudText Typo="Typo.body1">Rating Value: @user.Rating.ToString("0.00")</MudText>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UsersModel" Title="Review" Width="300px">
+                        <Template Context="user">
+                            <RadzenButton Text="Leave Review" Click="@(() => LeaveReview(user))" Style="color: white;" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UsersModel" Context="user" Width="100px">
+                        <Template>
+                            <RadzenButton Text="Report" Click="@(() => ReportUser(user))" Style="width: 100%; background-color: tomato; color: white;" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.H5" Text="Loading trip information..." />
+        }
+
+        <div style="text-align: center; margin-top: 20px;">
+            <RadzenButton Text="Submit Ratings" Click="@SubmitRatings" Style="background-color: green; color: white;" />
+        </div>
+    </RadzenCard>
+</RadzenStack>
+
+@code {
+    [Parameter]
+    public int TripID { get; set; }
+    private TripModel CurrentTrip { get; set; }
+    private List<UsersModel> GroupMembers { get; set; } = new();
+    private Dictionary<int, int> Ratings = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            var currentUser = await _dbUsers.GetUser(user.Identity.Name);
+            if (currentUser.Any())
+            {
+                CurrentTrip = await _dbGroupRec.GetTripWithMems(TripID);
+                if (CurrentTrip != null)
+                {
+                    var tasks = CurrentTrip.ConfirmedUsers
+                    .Where(member => member.UserID != currentUser.First().UserId)
+                    .Select(async member =>
+                    {
+                        var userDetails = await _dbUsers.GetUser((int)member.UserID);
+                        var userRating = await _dbRatings.GetRatings((int)member.UserID);
+                        return new UsersModel
+                                {
+                                    UserId = (int)member.UserID,
+                                    FirstName = member.FirstName,
+                                    LastName = member.LastName,
+                                    Email = userDetails.FirstOrDefault()?.Email ?? string.Empty, // Ensure Email is set
+                                    ProfilePicture = member.ProfilePicture,
+                                    Rating = userRating
+                                };
+                    });
+
+                    GroupMembers = (await Task.WhenAll(tasks)).ToList();
+                }
+            }
+        }
+    }
+
+    private int GetUserRating(int userId) => Ratings.TryGetValue(userId, out var rating) ? rating : (int)Math.Round(GroupMembers.FirstOrDefault(u => u.UserId == userId)?.Rating ?? 0);
+
+    private void StoreRating(int rating, int userId) => Ratings[userId] = rating;
+
+    private async Task SubmitRatings()
+    {
+        try
+        {
+            // Show a loading notification
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = "Submitting Ratings", Detail = "Please wait..." });
+
+            if (Ratings.Count == 0)
+            {
+                NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Warning, Summary = "No Ratings", Detail = "You must rate at least one user." });
+                return;
+            }
+
+            foreach (var rating in Ratings)
+            {
+                var groupMember = GroupMembers.FirstOrDefault(member => member.UserId == rating.Key);
+                if (groupMember == null)
+                {
+                    NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Error", Detail = $"Could not find user with ID {rating.Key}." });
+                    continue;
+                }
+
+                var newRating = new RatingsModel
+                        {
+                            RatedUserID = rating.Key,
+                            Rating = rating.Value
+                        };
+
+                // Create a new rating entry in the database
+                await _dbRatings.CreateNewRating(newRating);
+            }
+
+            NavigationManager.NavigateTo("/", forceLoad: true);
+
+            // Notify the user of success
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Success, Summary = "Ratings Submitted", Detail = "Your ratings have been successfully submitted." });
+        }
+        catch (Exception ex)
+        {
+            // Handle any exceptions and notify the user
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Error", Detail = $"An error occurred: {ex.Message}" });
+        }
+    }
+
+    private void ViewUser(string userEmail)
+    {
+        if (!string.IsNullOrEmpty(userEmail))
+        {
+            NavigationManager.NavigateTo($"/Other-User-Details/{userEmail}");
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Error", Detail = "User email not found." });
+        }
+    }
+
+
+    private string reportContent;
+    private string reportReason;
+    private string reportedUserEmail;
+    private string reportedUserName;
+    private string reportedUserNameLast;
+
+    private async Task ReportUser(UsersModel user)
+    {
+        reportedUserEmail = user.Email;
+        reportedUserName = user.FirstName;
+        reportedUserNameLast = user.LastName;
+
+        await DialogService.OpenAsync($"Report User: {reportedUserName} {reportedUserNameLast}",
+    ds => @<div style="margin-bottom: 20px;">
+        <textarea @bind="reportContent" placeholder="Write your report here..." style="width: 100%; height: 150px;"></textarea>
+        <RadzenDropDown @bind-Value="reportReason" Data="@(new List<string> { "Inappropriate Behavior", "Harassment", "Violation of Terms", "Other" })" Placeholder="Select a reason" />
+        <RadzenButton Text="Submit" Click="@SubmitReport" Style="width: 100%; background-color: #D3D3D3; color: #333; margin-top: 20px;" />
+    </div>,
+    new Radzen.DialogOptions() { Width = "600px", Height = "400px" });
+    }
+
+    private async Task SubmitReport()
+    {
+        if (string.IsNullOrEmpty(reportContent) || string.IsNullOrEmpty(reportReason))
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Warning, Summary = "Submission Failed", Detail = "Please provide both a report and a reason." });
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var currentUser = authState.User;
+        var currentUserEmail = currentUser.Identity.Name;
+
+        var reportedUser = (await _dbUsers.GetAllUser()).FirstOrDefault(u => u.Email == reportedUserEmail);
+        var submittingUser = (await _dbUsers.GetAllUser()).FirstOrDefault(u => u.Email == currentUserEmail);
+
+        if (reportedUser != null && submittingUser != null)
+        {
+            var newReport = new ReportsModel
+                    {
+                        ReportedUserID = reportedUser.UserId,
+                        SubmittedUserID = submittingUser.UserId,
+                        ReportText = reportContent,
+                        ReportReason = reportReason
+                    };
+
+            await _dbReports.CreateNewReport(newReport);
+
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Warning, Summary = "Report Submitted", Detail = "Your report has been submitted successfully." });
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Error", Detail = "Could not find the reported or submitting user." });
+        }
+
+        reportContent = string.Empty;
+        DialogService.Close(true);
+    }
+
+    
+    private string reviewContent;
+    private string reviewedUserEmail;
+    private string reviewedUserName;
+    private string reviewedUserNameLast;
+
+    private async Task LeaveReview(UsersModel user)
+    {
+        reviewedUserEmail = user.Email;
+        reviewedUserName = user.FirstName;
+        reviewedUserNameLast = user.LastName;
+
+        await DialogService.OpenAsync($"Leave a Review for {reviewedUserName} {reviewedUserNameLast}",
+    ds => @<div style="margin-bottom: 20px;">
+        <textarea @bind="reviewContent" placeholder="Write your review here..." style="width: 100%; height: 150px;"></textarea>
+        <RadzenButton Text="Submit" Click="@SubmitReview" Style="width: 100%; background-color: #D3D3D3; color: #333; margin-top: 20px;" />
+    </div>,
+        new Radzen.DialogOptions() { Width = "600px", Height = "400px" });
+    }
+
+    private async Task SubmitReview()
+    {
+        if (string.IsNullOrEmpty(reviewContent))
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Warning, Summary = "Submission Failed", Detail = "Please provide a review." });
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var currentUser = authState.User;
+        var currentUserEmail = currentUser.Identity.Name;
+
+        var reviewedUser = (await _dbUsers.GetAllUser()).FirstOrDefault(u => u.Email == reviewedUserEmail);
+        var reviewerUser = (await _dbUsers.GetAllUser()).FirstOrDefault(u => u.Email == currentUserEmail);
+
+        if (reviewedUser != null && reviewerUser != null)
+        {
+            var newReview = new ReviewsModel
+                {
+                    ReviewedUserID = reviewedUser.UserId,
+                    ReviewerUserID = reviewerUser.UserId,
+                    ReviewText = reviewContent
+                };
+
+            await _dbReviews.CreateNewReview(newReview);
+
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Success, Summary = "Review Submitted", Detail = "Your review has been submitted successfully." });
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Error, Summary = "Error", Detail = "Could not find the reviewed or submitting user." });
+        }
+
+        reviewContent = string.Empty;
+        DialogService.Close(true);
+    }
+}
+}

@@ -1,0 +1,138 @@
+﻿@using DataAccessLibrary.Model
+@inject Radzen.DialogService DialogService
+@inject Radzen.NotificationService NotificationService
+<RadzenTemplateForm TItem="SchedulesModel" Data="@model" Submit=@OnSubmit>
+    <MudGrid>
+        @if (!model.Text.Equals(""))
+        {
+            <MudItem xs="12">
+                <MudStack>
+                    <RadzenLabel Text="@($"Please Enter {model.Text} time range")" />
+                    <RadzenDatePicker @bind-Value="@model.Start" Name="Start" ShowTime="true" />
+                    <RadzenRequiredValidator Text="Start is required" Component="Start" />
+                    <RadzenDatePicker Name="End" @bind-Value="@model.End" ShowTime="true" />
+                    <RadzenRequiredValidator Component="End" Text="End is required" />
+                    <RadzenLabel Text="Is this a repeating schedule?" Component="RepeatC" />
+                    <RadzenCheckBox Name="RepeatC" TValue="bool" Change=@(args => _repeatBool = args) Value=_repeatBool></RadzenCheckBox>
+                </MudStack>
+            </MudItem>
+            @if (_repeatBool)
+            {
+                <MudItem xs="12">
+                    <MudStack>
+                        <RadzenLabel Text="Repeat on days:" Component="DropDownMultiple" />
+                        <RadzenDropDown @bind-Value="@selectedRepeatDays" Data="@days" Multiple="true" AllowClear="true" Placeholder="Select Repeat Days"
+                                        TextProperty="Name" ValueProperty="Id" Name="DropDownMultiple" />
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudStack>
+                        <RadzenLabel Text="Repeat until:" />
+                        <RadzenDatePicker @bind-Value="@RepeatUntil" Max="Start.AddDays(120)" ShowTime="false" DateFormat="MM/dd/yyyy" />
+                    </MudStack>
+                </MudItem>
+            }
+            <MudItem xs="12">
+                <MudStack>
+                    <RadzenButton ButtonType="Radzen.ButtonType.Submit" Text="Save" Size="ButtonSize.Medium" />
+                </MudStack>
+            </MudItem>
+        }
+    </MudGrid>
+
+
+
+
+</RadzenTemplateForm>
+@code {
+
+    [Parameter]
+    public DateTime Start { get; set; }
+
+    [Parameter]
+    public DateTime End { get; set; }
+    [Parameter]
+    public int UserID { get; set; }
+    [Parameter]
+    public EventCallback<SchedulesModel> OnAddSchedule { get; set; }
+    [Parameter]
+    public string Direction{ get; set; }
+
+
+    SchedulesModel model = new SchedulesModel();
+    bool _repeatBool = false;
+    public DateTime RepeatUntil { get; set; }
+    public Dictionary<string, bool> RepeatDays { get; set; } = Enum.GetNames(typeof(DayOfWeek)).ToDictionary(day => day, day => false);
+    List<string> selectedRepeatDays = new List<string>();
+
+    IEnumerable<DaysOfTheWeek> days = new List<DaysOfTheWeek>
+    {
+        new DaysOfTheWeek { Id = "0", Name = "Sunday" },
+        new DaysOfTheWeek { Id = "1", Name = "Monday" },
+        new DaysOfTheWeek { Id = "2", Name = "Tuesday" },
+        new DaysOfTheWeek { Id = "3", Name = "Wednesday" },
+        new DaysOfTheWeek { Id = "4", Name = "Thursday" },
+        new DaysOfTheWeek { Id = "5", Name = "Friday" },
+        new DaysOfTheWeek { Id = "6", Name = "Saturday" },
+
+    };
+
+    class DaysOfTheWeek
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+    }
+    protected override void OnParametersSet()
+    {
+        model.Start = Start;
+        model.End = End;
+        model.UserId = UserID;
+        model.Text = "";
+        model.Text = Direction;
+    }
+
+    void OnSubmit()
+    {
+        TimeSpan timeDifference = model.End - model.Start;
+        string dayID = days.FirstOrDefault(g => g.Name == model.Start.DayOfWeek.ToString())?.Id;
+        if (timeDifference > TimeSpan.FromHours(2) || model.Start > model.End)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Time Range Error", "The start and end time must be within 2 hours of each other. Please modify the dates and times.", 7000);
+        }
+        else if (_repeatBool && (RepeatUntil == null || RepeatUntil == DateTime.MinValue))
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Schedule Repeat Error", "The selected date must be selected in the repeat schedule drop down.", 7000);
+        }
+        else
+        {
+            @if (_repeatBool)
+            {
+                // For repeats
+                DateTime WalkDate = model.Start;
+
+                RepeatUntil = RepeatUntil.AddDays(1);
+                while (WalkDate <= RepeatUntil)
+                {
+                    dayID = days.FirstOrDefault(g => g.Name == WalkDate.DayOfWeek.ToString())?.Id;
+                    @if (selectedRepeatDays.Contains(dayID))
+                    {
+                        model.Day = WalkDate.DayOfWeek.ToString();
+                        OnAddSchedule.InvokeAsync(model);
+                    }
+                    WalkDate = WalkDate.AddDays(1);
+                    model.Start = model.Start.AddDays(1);
+                    model.End = model.End.AddDays(1);
+
+                }
+            } else
+            {
+                // For no repeats 
+                model.Day = model.Start.DayOfWeek.ToString();
+                OnAddSchedule.InvokeAsync(model);
+
+            }
+
+            DialogService.Close(model);
+        }
+    }
+}

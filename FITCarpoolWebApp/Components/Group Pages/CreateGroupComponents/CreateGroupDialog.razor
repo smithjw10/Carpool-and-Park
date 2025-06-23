@@ -1,0 +1,196 @@
+﻿@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+@using FITCarpoolWebApp.Components.MainPages
+@using Radzen
+@inject Radzen.DialogService DialogService
+@inject Radzen.NotificationService NotificationService
+@inject IGroupScheduleData _dbGroupSchedules
+@inject ICarpoolGroupsData _dbCarpoolGroups
+<RadzenTemplateForm TItem="CarpoolGroupsModel" Data="@GroupModel" Submit="OnSubmit">
+    <MudGrid>
+        <MudItem xs="12">
+            <MudStack>
+                <RadzenLabel>Is this an arrival or departure to/from campus</RadzenLabel>
+                <RadzenDropDown @bind-Value="@GroupModel.Destination" Name="ArrivalDepartureSelect" Data="@ArrivalDepartureAddress" Style="width:100%;" TextProperty="@nameof(ArriveDepartModel.selectText)" ValueProperty="@nameof(ArriveDepartModel.address)" />
+                <RadzenRequiredValidator Text="Selection is required" Component="ArrivalDepartureSelect" />
+            </MudStack>
+        </MudItem>
+        @*Wait for the user to select if they are arriving or departing *@
+        @if (!GroupModel.Destination.Equals(""))
+        {
+            <MudItem xs="12">
+                <MudStack>
+                    <RadzenLabel Text="Group Name" Style="display: block; margin-bottom: 5px;" />
+                    <RadzenTextBox Name="GroupName" @bind-Value="@GroupModel.GroupName" Placeholder="Group Name" Style="width:100%;  margin-bottom:5px;" />
+                    <RadzenRequiredValidator Text="Group Name is required" Component="GroupName" />
+                </MudStack>
+            </MudItem>
+            <MudItem xs="12">
+                <RadzenScheduler @ref=@scheduler SlotRender=@OnSlotRender style="height: 85vh;" TItem="SchedulesModel" Data=@ListSchedules StartProperty="Start" EndProperty="End"
+                                 TextProperty="Text" SelectedIndex="2"
+                                 SlotSelect=@OnSlotSelect AppointmentSelect=@OnAppointmentSelect AppointmentRender=@OnAppointmentRender star>
+
+                    <RadzenMonthView />
+                    <RadzenDayView />
+                    <RadzenWeekView />
+                </RadzenScheduler>
+            </MudItem>
+            <MudItem xs="12">
+                <MudStack>
+                    <RadzenButton ButtonType="Radzen.ButtonType.Submit" Text="Save" Size="ButtonSize.Medium" />
+                </MudStack>
+            </MudItem>
+        }
+    </MudGrid>
+
+
+
+</RadzenTemplateForm>
+@code {
+    [Parameter ]
+    public UsersModel CurrentUser { get; set; } 
+    [Parameter]
+    public EventCallback<GroupScheduleModel> OnAddSchedule { get; set; }
+    GroupScheduleModel model = new GroupScheduleModel();
+    CarpoolGroupsModel GroupModel = new();
+    List<ArriveDepartModel> ArrivalDepartureAddress = new();
+    // Schedule
+    RadzenScheduler<SchedulesModel> scheduler = new();
+    List<SchedulesModel> ListSchedules = new();
+    class ArriveDepartModel
+    {
+        public string address { get; set; }
+        public string direction { get; set; }
+        public string selectText { get; set; }
+        public ArriveDepartModel(string add, string dir)
+        {
+            direction = dir;
+            address = add;
+            selectText = char.ToUpper(direction[0]) + direction.Substring(1) + " to " + address;
+        }
+
+    }
+    protected override void OnParametersSet()
+    {
+        ArrivalDepartureAddress.Add(new ArriveDepartModel(CurrentUser?.PickupLocation, "arrival"));
+        ArrivalDepartureAddress.Add(new ArriveDepartModel(CurrentUser?.DropoffLocation, "departure"));
+
+    }
+    async Task OnSubmit()
+    {
+        GroupModel.CreatorID = CurrentUser.UserId;
+        GroupModel.DriverId = CurrentUser.UserId;
+        if (!appointments.Any())
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "No Schedule Error", "Please add a schedule to your Group to finish creation", 7000);
+            return;
+        }
+        await _dbCarpoolGroups.CreateNewGroup(GroupModel);
+
+        int groupID = await _dbCarpoolGroups.GetGroupNumber(GroupModel.GroupName, GroupModel.CreatorID);
+
+        // Insert schedule 
+        string direction = ArrivalDepartureAddress.Where(e => GroupModel.Destination == e.address  ).First().direction;
+        foreach (SchedulesModel schedules in ListSchedules)
+        {
+            Console.WriteLine(schedules.ToString());
+            schedules.Text = direction;
+            await _dbGroupSchedules.AddSchedule(schedules, groupID);
+        }
+        DialogService.Close(model);
+    }  
+
+    IList<SchedulesModel> appointments = new List<SchedulesModel>();
+    void OnSlotRender(SchedulerSlotRenderEventArgs args)
+    {
+
+    }
+    async Task OnSlotSelect(SchedulerSlotSelectEventArgs args)
+    {
+        Console.WriteLine($"Slot Selected: {args.Start} to {args.End}");
+
+        if (args.View.Text != "Year")
+        {
+            string direction = (ArrivalDepartureAddress.Where(e => GroupModel.Destination == e.address).First().direction);
+
+            SchedulesModel data = await DialogService.OpenAsync<AddGroupSchedulePage>("Add Schedule",
+            new Dictionary<string, object> { { "Start", args.Start }, { "End", args.End }, { "UserID", CurrentUser.UserId }, {"Direction", direction} ,{ "OnAddSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(AddSchedule)) } });
+
+            if (data != null)
+            {
+                appointments.Add(data);
+                // Either call the Reload method or reassign the Data property of the Scheduler
+            }
+            await scheduler.Reload();
+
+        }
+    }
+
+    async Task OnAppointmentSelect(SchedulerAppointmentSelectEventArgs<SchedulesModel> args)
+    {
+        Console.WriteLine($"Appt Selected: {args.Start} to {args.End}");
+
+        var copy = new SchedulesModel
+            {
+                Start = args.Data.Start,
+                End = args.Data.End,
+                Text = args.Data.Text,
+            };
+        var matchingSchedule = ListSchedules.FirstOrDefault(schedule =>
+            schedule.UserId == CurrentUser.UserId &&
+            schedule.Start == args.Start &&
+            schedule.End == args.End);
+        if (matchingSchedule == null)
+        {
+            return;
+        }
+        var data = await DialogService.OpenAsync<EditSchedulePage>("Edit Appointment", new Dictionary<string, object> { { "CurrSchedule", matchingSchedule }, { "OnDeleteSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(DeleteSchedule)) }, { "OnEditSchedule", new EventCallbackFactory().Create(this, new Action<SchedulesModel>(EditSchedule)) } });
+
+        if (data != null)
+        {
+            // Update the appointment
+            args.Data.Start = data.Start;
+            args.Data.End = data.End;
+            args.Data.Text = data.Text;
+        }
+
+        await scheduler.Reload();
+    }
+
+    void OnAppointmentRender(SchedulerAppointmentRenderEventArgs<SchedulesModel> args)
+    {
+
+        if (args.Data.Text == "arrival")
+        {
+            args.Attributes["style"] = "background: red";
+        }
+    }
+    public void AddSchedule(SchedulesModel schedule)
+    {
+        ListSchedules.Add(schedule);
+        scheduler.Reload();
+    }
+    public void DeleteSchedule(SchedulesModel schedule)
+    {
+        ListSchedules.Remove(schedule);
+        scheduler.Reload();
+
+    }
+    public void EditSchedule(SchedulesModel schedule)
+    {
+        var matchingSchedule = ListSchedules.FirstOrDefault(schedule1 =>
+            schedule1.UserId == CurrentUser.UserId &&
+            schedule1.Start == schedule.Start &&
+            schedule1.End == schedule.End);
+        if (matchingSchedule != null)
+        {
+            ListSchedules.Remove(matchingSchedule);
+
+        }
+        ListSchedules.Add(schedule);
+        scheduler.Reload();
+
+
+    }
+}

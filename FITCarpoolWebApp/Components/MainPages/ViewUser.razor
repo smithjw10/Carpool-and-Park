@@ -1,0 +1,187 @@
+﻿@inject NavigationManager NavigationManager
+@inject IUsersData _dbUsers
+@inject IReviewsData _dbReviews
+@inject NotificationService NotificationService
+
+@using DataAccessLibrary.Data.Database
+@using DataAccessLibrary.Model
+@using DataAccessLibrary.Model.Database_Models
+
+
+@page "/Other-User-Details/{UserName}"
+
+
+
+<RadzenCard Class="rz-my-12 rz-mx-auto" Style="width:75%">
+
+
+<RadzenRow RowGap="0">
+    <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+
+
+
+        <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.End" JustifyContent="Radzen.JustifyContent.End" Wrap="FlexWrap.Wrap">
+
+            @if (selectedUser == null)
+            {
+                <RadzenImage Path="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" Style="width: 150px; height: 150px; border-radius: 50%;" />
+            }
+
+            @if (selectedUser != null)
+            {
+                @if (selectedUser.ProfilePicture == null)
+                {
+                    <RadzenImage Path="https://cdn.create.vista.com/api/media/medium/137014128/stock-vector-user-profile-icon?token" Style="width: 150px; height: 150px; border-radius: 50%;" />
+                }
+
+                @if (selectedUser.ProfilePicture != null)
+                {
+                    <RadzenImage Path="@($"data:image/jpeg;base64,{Convert.ToBase64String(selectedUser.ProfilePicture)}")" AlternateText="binary image" Style="width: 150px; height: 150px; border-radius: 50%;" />
+                }
+            }
+
+
+
+        </RadzenStack>
+
+        <RadzenStack Orientation="Radzen.Orientation.Vertical" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+
+
+            <RadzenStack Orientation="Radzen.Orientation.Horizontal" AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Center" Wrap="FlexWrap.Wrap">
+                <RadzenText TextStyle="TextStyle.H4" Placeholder="User's Name'..." class="rz-display-flex  rz-my-0">
+                    @selectedUserName
+                </RadzenText>
+                <RadzenButton Click=@(args => OnClick("Friend Request Sent")) Text="Send Friend Request" ButtonStyle="ButtonStyle.Primary" />
+            </RadzenStack>
+
+
+            <RadzenColumn SizeSM="6" Class="d-flex align-items-center justify-content-center">
+                <RadzenText TextStyle="TextStyle.Button" Click="@(() => NavigateTo("Friends"))" Style=" font-size: 26px;" class="rz-display-flex rz-m-2">13 </RadzenText>
+                <RadzenText TextStyle="TextStyle.Button" class="rz-display-flex rz-m-2">Friends</RadzenText>
+
+
+                <RadzenText TextStyle="TextStyle.Button" Style="font-size: 26px;" class="rz-display-flex rz-m-2">24</RadzenText>
+
+                <RadzenText TextStyle="TextStyle.Button" Click="@(() => NavigateTo("Group"))" class="rz-display-flex rz-m-2">Completed Rides</RadzenText>
+
+            </RadzenColumn>
+        </RadzenStack>
+
+    </RadzenStack>
+
+</RadzenRow>
+
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Pronouns</RadzenText>
+<RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">She/Her, He/Him, etc.</RadzenText>
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-0">Bio</RadzenText>
+<RadzenTextArea class="w-60" aria-label="TextArea" />
+
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-2">Current Rating </RadzenText>
+<RadzenRating Value="@(Convert.ToInt32(Math.Round(ratingValue)))" Max="5" ReadOnly="true" Style="margin-right: 10px;" />
+    <MudText Typo="Typo.body1">Rating Value: @ratingValue.ToString("0.00")</MudText>
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-display-flex rz-mt-2 rz-my-2">Reviews</RadzenText>
+
+    @if (userReviews != null && userReviews.Any())
+    {
+        @foreach (var reviewText in userReviews)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">@reviewText</RadzenText>
+        }
+    }
+    else
+    {
+        <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-display-flex rz-mt-2 rz-my-0">No reviews yet.</RadzenText>
+    }
+
+
+</RadzenCard>
+
+
+
+@code {
+
+    bool show;
+
+    public int role { get; private set; }
+
+    private void OnClick(string message)
+    {
+        NotificationService.Notify(new NotificationMessage { Severity = NotificationSeverity.Info, Summary = message });
+    }
+
+    private void NavigateTo(string page)
+    {
+        NavigationManager.NavigateTo($"/{page}");
+    }
+
+
+    private List<Statistics> stats;
+
+    protected override void OnInitialized()
+    {
+        stats = new List<Statistics>
+        {
+            new Statistics { title = "Total Driving Miles", miles = 3},
+            new Statistics { title = "Total Riding Miles", miles = 8},
+            new Statistics { title = "Net Driving Miles", miles = 15},
+            new Statistics { title = "Net Driving Miles Per Week", miles = 6}
+
+        };
+    }
+
+    public class Statistics
+    {
+        public string? title { get; set; }
+        public int miles { get; set; }
+        public int CurrentSize { get; set; }
+        public string? Description { get; set; }
+    }
+
+
+    [Parameter]
+    public string UserName { get; set; }
+
+    private UsersModel selectedUser;
+    private string selectedUserName => selectedUser?.FirstName + " " + selectedUser?.LastName ?? "No user selected";
+    private List<UsersModel> UserList = new();
+
+    private double noValue;
+    public double ratingValue
+    {
+        get => selectedUser?.Rating ?? noValue;
+        set
+        {
+            if (selectedUser != null)
+            {
+                selectedUser.Rating = value;
+            }
+            noValue = value;
+        }
+    }
+
+    private List<string> userReviews;
+    protected override async Task OnInitializedAsync()
+    {
+        var users = await _dbUsers.GetAllUser();
+        selectedUser = users.FirstOrDefault(user => user.Email.Equals(UserName, StringComparison.OrdinalIgnoreCase));
+
+        if (selectedUser != null)
+        {
+            userReviews = await _dbReviews.GetReviewsText(selectedUser.UserId);
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/Group");
+        }
+    }
+}
+
+
+
+}
+
+
