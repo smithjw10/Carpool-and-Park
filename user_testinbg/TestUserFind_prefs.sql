@@ -1,0 +1,1 @@
+select * from Preferences where UserId < 0 

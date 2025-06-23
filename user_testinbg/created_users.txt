@@ -1,0 +1,24 @@
+UserID: -7874
+Name: TestUser7874 LastName7874
+Email: testuser78744716@test.com
+User Type: driver
+Gender: Woman
+Driving Distance: 5 km
+Belt Count: 6
+Allow Eat/Drink: No
+Allow Smoke/Vape: Yes
+Preferences:
+  Gender Preference: Same Gender
+  Eating Preference: No Preference
+  Smoking Preference: Vehicle allows smoking
+  Temperature Preference: Colder
+  Music Preference: No Preference
+Location Information:
+  User Location: 4065 Sage Brush Cir, Melbourne, FL 32901, USA
+  Pickup Latitude: 28.050947092755298
+  Pickup Longitude: -80.63490674310793
+  Pickup Location: 4065 Sage Brush Cir, Melbourne, FL 32901, USA
+  Dropoff Latitude (Campus): 28.06675
+  Dropoff Longitude (Campus): -80.623032
+  Dropoff Location: 150 W University Blvd, Melbourne, FL 32901
+--------------------------------------------------
